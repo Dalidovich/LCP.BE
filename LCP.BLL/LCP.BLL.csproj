@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LCP.DAL\LCP.DAL.csproj" />
+    <ProjectReference Include="..\LCP.Domain\LCP.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
