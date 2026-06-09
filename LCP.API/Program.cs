@@ -37,6 +37,7 @@ public class Program
             builder.Services.AddSingleton<ITagRepository, JsonTagRepository>();
             builder.Services.AddScoped<IVideoService, VideoService>();
             builder.Services.AddScoped<ITagService, TagService>();
+            builder.Services.AddScoped<IThumbnailService, ThumbnailService>();
 
             builder.Services.AddHostedService<LibrarySeedService>();
             builder.Services.AddHostedService<LibrarySyncService>();
@@ -52,6 +53,7 @@ public class Program
             });
 
             builder.Host.UseSerilog();
+
 
             var app = builder.Build();
 

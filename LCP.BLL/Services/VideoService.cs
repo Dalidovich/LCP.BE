@@ -10,11 +10,16 @@ namespace LCP.BLL.Services;
 public class VideoService : IVideoService
 {
     private readonly IVideoRepository _repository;
+    private readonly IThumbnailService _thumbnailService;
     private readonly string _libraryRootPath;
 
-    public VideoService(IVideoRepository repository, IOptions<LibrarySettings> settings)
+    public VideoService(
+        IVideoRepository repository,
+        IThumbnailService thumbnailService,
+        IOptions<LibrarySettings> settings)
     {
         _repository = repository;
+        _thumbnailService = thumbnailService;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
@@ -60,6 +65,11 @@ public class VideoService : IVideoService
             entry.Type = request.Type.Value;
         if (request.Tags is not null)
             entry.Tags = request.Tags;
+        if (request.ThumbnailTimecode is not null)
+        {
+            entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
+            _thumbnailService.InvalidateCache(id);
+        }
 
         await _repository.SaveAllAsync(allEntries);
         return MapToDto(entry);
@@ -94,6 +104,7 @@ public class VideoService : IVideoService
         EpisodeNumber = v.EpisodeNumber,
         Type = v.Type,
         Tags = [.. v.Tags],
-        IsDeleted = v.IsDeleted
+        IsDeleted = v.IsDeleted,
+        ThumbnailTimecode = v.ThumbnailTimecode
     };
 }

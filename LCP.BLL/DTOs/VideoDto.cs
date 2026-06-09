@@ -14,4 +14,5 @@ public class VideoDto
     public VideoType Type { get; set; } = VideoType.Film;
     public List<string> Tags { get; set; } = [];
     public bool IsDeleted { get; set; }
+    public double ThumbnailTimecode { get; set; } = -1;
 }

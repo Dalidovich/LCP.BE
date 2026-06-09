@@ -10,4 +10,5 @@ public class UpdateVideoRequest
     public int? EpisodeNumber { get; set; }
     public VideoType? Type { get; set; }
     public List<string>? Tags { get; set; }
+    public double? ThumbnailTimecode { get; set; }
 }

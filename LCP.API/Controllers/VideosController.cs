@@ -9,10 +9,12 @@ namespace LCP.API.Controllers;
 public class VideosController : ControllerBase
 {
     private readonly IVideoService _videoService;
+    private readonly IThumbnailService _thumbnailService;
 
-    public VideosController(IVideoService videoService)
+    public VideosController(IVideoService videoService, IThumbnailService thumbnailService)
     {
         _videoService = videoService;
+        _thumbnailService = thumbnailService;
     }
 
     [HttpGet]
@@ -66,6 +68,35 @@ public class VideosController : ControllerBase
         var contentType = GetContentType(fileInfo.Extension);
 
         return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
+    }
+
+    [HttpGet("{id}/thumbnail")]
+    public async Task<IActionResult> Thumbnail(string id, [FromQuery] double? t = null, [FromQuery] bool noCache = false)
+    {
+        ThumbnailResult? result;
+
+        if (t.HasValue)
+        {
+            result = await _thumbnailService.GetThumbnailPreviewAsync(id, t.Value);
+        }
+        else
+        {
+            if (noCache)
+                _thumbnailService.InvalidateCache(id);
+            result = await _thumbnailService.GetThumbnailAsync(id);
+        }
+
+        if (result is null) return NotFound();
+
+        var etag = $"\"{result.LastModified.Ticks:x}\"";
+
+        if (Request.Headers.IfNoneMatch.ToString() == etag)
+            return StatusCode(304);
+
+        Response.Headers.ETag = etag;
+        Response.Headers.LastModified = result.LastModified.ToString("R");
+
+        return File(result.Data, "image/jpeg");
     }
 
     private static string GetContentType(string extension)
