@@ -29,6 +29,7 @@ EpisodeNumber : int      (default -1)
 Type          : VideoType (enum: Anime=0, Film=1)
 Tags          : List<string>
 IsDeleted     : bool     (soft delete flag)
+Duration      : double   (total seconds, set via ffprobe on seed/sync)
 ```
 
 ### `VideoType` (LCP.Domain/Entities/)
