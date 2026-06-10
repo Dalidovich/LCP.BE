@@ -35,15 +35,12 @@ public class LibrarySyncService : IHostedService
             .Select(f => Path.GetRelativePath(rootPath, f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var entry in allEntries)
+        var removedCount = allEntries.RemoveAll(e =>
         {
-            var fullPath = Path.Combine(rootPath, entry.RelativePath);
-            if (!File.Exists(fullPath))
-            {
-                entry.IsDeleted = true;
-                changed = true;
-            }
-        }
+            var fullPath = Path.Combine(rootPath, e.RelativePath);
+            return !File.Exists(fullPath);
+        });
+        if (removedCount > 0) changed = true;
 
         var trackedPaths = allEntries
             .Select(e => e.RelativePath.Replace('/', '\\'))
