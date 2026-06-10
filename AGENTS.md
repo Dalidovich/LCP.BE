@@ -83,9 +83,11 @@ enum VideoType { Anime, Film }
 | GET | `/api/videos` | List all videos (including deleted, marked with `isDeleted`) |
 | GET | `/api/videos/paged?page=1&pageSize=20` | Paginated list (non-deleted only) |
 | GET | `/api/videos/{id}` | Get single video (even if deleted) |
-| PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags) |
+| PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags, ThumbnailTimecode) |
 | DELETE | `/api/videos/{id}` | Soft delete (sets IsDeleted=true, returns 204) |
 | GET | `/api/videos/{id}/stream` | Stream video file (supports HTTP Range for seeking) |
+| GET | `/api/videos/{id}/thumbnail?t=30&noCache=false` | Return JPEG thumbnail frame (image/jpeg). `t` seeks to a specific second; omit for stored ThumbnailTimecode |
+| GET | `/api/videos/{id}/preview?resolution=144` | Return 25s MP4 preview clip (video/mp4, supports Range). Resolution: `Preview144` or `Preview360` |
 | GET | `/api/tags` | List all master tags |
 | POST | `/api/tags` | Add a tag (body: plain string) |
 | DELETE | `/api/tags/{tag}` | Remove a tag |
@@ -102,6 +104,8 @@ Both run once on startup. `IVideoRepository` is Singleton so the in-memory cache
 ## Key Conventions
 
 - **No create endpoint** — JSON file is managed via seed/sync services
+- **Thumbnails** — generated on demand via `NReco.VideoConverter` frame extraction; cached in memory (`ConcurrentDictionary`). Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching.
+- **Previews** — generated on demand via `NReco.VideoConverter.ConvertMedia` (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory keyed by `{id}_{resolution}`.
 - **Soft delete only** — `DELETE` sets `IsDeleted = true`, never removes from file
 - **Thread safety** — `JsonVideoRepository` and `JsonTagRepository` use `SemaphoreSlim` per instance
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
@@ -128,11 +132,14 @@ Swagger UI at `/swagger`.
 - `Swashbuckle.AspNetCore` 7.3.1 (LCP.API)
 - `Serilog.AspNetCore` 9.0.0 (LCP.API)
 - `Microsoft.Extensions.Options` 9.0.3 (LCP.DAL)
+- `Microsoft.Extensions.Logging.Abstractions` 9.0.3 (LCP.BLL)
+- `NReco.VideoConverter` 1.2.1 (LCP.BLL)
 
 ## Project References
 
 ```
 LCP.API → LCP.BLL, LCP.DAL
 LCP.BLL → LCP.DAL, LCP.Domain
+(also NuGet: NReco.VideoConverter bundles ffmpeg/ffprobe binaries)
 LCP.DAL → LCP.Domain
 ```

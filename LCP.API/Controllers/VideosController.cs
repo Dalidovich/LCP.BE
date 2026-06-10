@@ -10,11 +10,13 @@ public class VideosController : ControllerBase
 {
     private readonly IVideoService _videoService;
     private readonly IThumbnailService _thumbnailService;
+    private readonly IPreviewService _previewService;
 
-    public VideosController(IVideoService videoService, IThumbnailService thumbnailService)
+    public VideosController(IVideoService videoService, IThumbnailService thumbnailService, IPreviewService previewService)
     {
         _videoService = videoService;
         _thumbnailService = thumbnailService;
+        _previewService = previewService;
     }
 
     [HttpGet]
@@ -68,6 +70,24 @@ public class VideosController : ControllerBase
         var contentType = GetContentType(fileInfo.Extension);
 
         return PhysicalFile(filePath, contentType, enableRangeProcessing: true);
+    }
+
+    [HttpGet("{id}/preview")]
+    public async Task<IActionResult> Preview(string id, [FromQuery] PreviewResolution resolution = PreviewResolution.Preview144)
+    {
+        var result = await _previewService.GetPreviewAsync(id, resolution);
+        if (result is null) return NotFound();
+
+        var etag = $"\"{result.LastModified.Ticks:x}\"";
+
+        if (Request.Headers.IfNoneMatch.ToString() == etag)
+            return StatusCode(304);
+
+        Response.Headers.ETag = etag;
+        Response.Headers.LastModified = result.LastModified.ToString("R");
+        Response.Headers.AcceptRanges = "bytes";
+
+        return File(result.Data, "video/mp4", enableRangeProcessing: true);
     }
 
     [HttpGet("{id}/thumbnail")]
