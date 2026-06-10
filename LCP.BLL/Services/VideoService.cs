@@ -102,7 +102,7 @@ public class VideoService : IVideoService
         var entry = allEntries.FirstOrDefault(v => v.Id == id);
         if (entry is null) return null;
 
-        entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
+        entry.PreviewSlices = PreviewSlice.CalculateRandomSlices(entry.Duration);
         _previewService.InvalidateCache(id);
         await _repository.SaveAllAsync(allEntries);
         return MapToDto(entry);
