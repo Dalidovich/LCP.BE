@@ -82,7 +82,8 @@ public class LibrarySeedService : IHostedService
                 RelativePath = relativePath,
                 SystemName = Path.GetFileNameWithoutExtension(file),
                 IsDeleted = false,
-                Duration = duration
+                Duration = duration,
+                PreviewSlices = PreviewSlice.CalculateSlices(duration)
             });
         }
 

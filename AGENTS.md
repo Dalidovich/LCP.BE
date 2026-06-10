@@ -29,12 +29,16 @@ EpisodeNumber : int      (default -1)
 Type          : VideoType (enum: Anime=0, Film=1)
 Tags          : List<string>
 IsDeleted     : bool     (soft delete flag)
-Duration      : double   (total seconds, set via ffprobe on seed/sync)
+Duration      : double   (total seconds, set via ffmpeg on seed/sync)
+PreviewSlices : List<PreviewSlice> (5 × 5s segments spread across video for preview compilation)
 ```
 
-### `VideoType` (LCP.Domain/Entities/)
+### `PreviewSlice` (LCP.Domain/Entities/)
 ```csharp
-enum VideoType { Anime, Film }
+class PreviewSlice {
+    Start    : double  (seconds)
+    Duration : double  (seconds)
+}
 ```
 
 ### JSON Files (stored in `{LibraryRootPath}\SYSTEMFILES\`)

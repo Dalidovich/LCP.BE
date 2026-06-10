@@ -14,4 +14,5 @@ public class VideoMetadata
     public bool IsDeleted { get; set; }
     public double ThumbnailTimecode { get; set; } = -1;
     public double Duration { get; set; }
+    public List<PreviewSlice> PreviewSlices { get; set; } = [];
 }

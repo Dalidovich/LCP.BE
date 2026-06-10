@@ -45,6 +45,15 @@ public class LibrarySyncService : IHostedService
         });
         if (removedCount > 0) changed = true;
 
+        foreach (var entry in allEntries)
+        {
+            if (entry.PreviewSlices.Count == 0)
+            {
+                entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
+                changed = true;
+            }
+        }
+
         var trackedPaths = allEntries
             .Select(e => e.RelativePath.Replace('/', '\\'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -61,7 +70,8 @@ public class LibrarySyncService : IHostedService
                 RelativePath = relativePath,
                 SystemName = Path.GetFileNameWithoutExtension(relativePath),
                 IsDeleted = false,
-                Duration = duration
+                Duration = duration,
+                PreviewSlices = PreviewSlice.CalculateSlices(duration)
             });
             changed = true;
         }
