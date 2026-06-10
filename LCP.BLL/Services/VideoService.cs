@@ -11,15 +11,18 @@ public class VideoService : IVideoService
 {
     private readonly IVideoRepository _repository;
     private readonly IThumbnailService _thumbnailService;
+    private readonly IPreviewService _previewService;
     private readonly string _libraryRootPath;
 
     public VideoService(
         IVideoRepository repository,
         IThumbnailService thumbnailService,
+        IPreviewService previewService,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
         _thumbnailService = thumbnailService;
+        _previewService = previewService;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
@@ -93,6 +96,18 @@ public class VideoService : IVideoService
         return File.Exists(fullPath) ? fullPath : null;
     }
 
+    public async Task<VideoDto?> RegenerateSlicesAsync(string id)
+    {
+        var allEntries = await _repository.GetAllRawAsync();
+        var entry = allEntries.FirstOrDefault(v => v.Id == id);
+        if (entry is null) return null;
+
+        entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
+        _previewService.InvalidateCache(id);
+        await _repository.SaveAllAsync(allEntries);
+        return MapToDto(entry);
+    }
+
     private static VideoDto MapToDto(VideoMetadata v) => new()
     {
         Id = v.Id,
@@ -105,6 +120,8 @@ public class VideoService : IVideoService
         Type = v.Type,
         Tags = [.. v.Tags],
         IsDeleted = v.IsDeleted,
-        ThumbnailTimecode = v.ThumbnailTimecode
+        ThumbnailTimecode = v.ThumbnailTimecode,
+        Duration = v.Duration,
+        PreviewSlices = [.. v.PreviewSlices]
     };
 }

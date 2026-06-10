@@ -60,6 +60,14 @@ public class VideosController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id}/regenerate-slices")]
+    public async Task<ActionResult<VideoDto>> RegenerateSlices(string id)
+    {
+        var video = await _videoService.RegenerateSlicesAsync(id);
+        if (video is null) return NotFound();
+        return video;
+    }
+
     [HttpGet("{id}/stream")]
     public async Task<IActionResult> Stream(string id)
     {

@@ -10,4 +10,5 @@ public interface IVideoService
     Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request);
     Task<bool> SoftDeleteAsync(string id);
     Task<string?> ResolveFilePathAsync(string id);
+    Task<VideoDto?> RegenerateSlicesAsync(string id);
 }
