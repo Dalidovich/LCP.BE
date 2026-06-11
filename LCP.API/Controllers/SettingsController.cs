@@ -1,6 +1,8 @@
 using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
+using LCP.DAL.Configuration;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace LCP.API.Controllers;
 
@@ -9,10 +11,12 @@ namespace LCP.API.Controllers;
 public class SettingsController : ControllerBase
 {
     private readonly ISettingsService _settingsService;
+    private readonly IOptions<LibrarySettings> _settings;
 
-    public SettingsController(ISettingsService settingsService)
+    public SettingsController(ISettingsService settingsService, IOptions<LibrarySettings> settings)
     {
         _settingsService = settingsService;
+        _settings = settings;
     }
 
     [HttpGet]
@@ -26,5 +30,15 @@ public class SettingsController : ControllerBase
     {
         var result = await _settingsService.UpdateAsync(settings);
         return result;
+    }
+
+    [HttpPost("check-password")]
+    public ActionResult<bool> CheckPassword([FromBody] string password)
+    {
+        var stored = _settings.Value.Password;
+        if (string.IsNullOrEmpty(stored))
+            return false;
+
+        return string.Equals(password, stored, StringComparison.Ordinal);
     }
 }

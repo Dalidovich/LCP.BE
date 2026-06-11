@@ -8,6 +8,7 @@ public class LibrarySettings
     public string TagsFilePath { get; set; } = "tags.json";
     public string SettingsFilePath { get; set; } = "settings.json";
     public string LibraryRootPath { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
 
     public string ResolveSystemFilePath(string relativePath)
     {
