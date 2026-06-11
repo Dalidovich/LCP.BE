@@ -1,5 +1,7 @@
 using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
+using LCP.DAL.Interfaces;
+using LCP.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LCP.API.Controllers;
@@ -11,18 +13,26 @@ public class VideosController : ControllerBase
     private readonly IVideoService _videoService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
+    private readonly ISettingsRepository _settingsRepository;
 
-    public VideosController(IVideoService videoService, IThumbnailService thumbnailService, IPreviewService previewService)
+    public VideosController(
+        IVideoService videoService,
+        IThumbnailService thumbnailService,
+        IPreviewService previewService,
+        ISettingsRepository settingsRepository)
     {
         _videoService = videoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
+        _settingsRepository = settingsRepository;
     }
 
     [HttpGet]
     public async Task<ActionResult<List<VideoDto>>> GetAll()
     {
-        return await _videoService.GetAllAsync();
+        var videos = await _videoService.GetAllAsync();
+        _ = WarmCacheAsync(videos);
+        return videos;
     }
 
     [HttpGet("paged")]
@@ -33,7 +43,9 @@ public class VideosController : ControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 20;
 
-        return await _videoService.GetPagedAsync(page, pageSize);
+        var result = await _videoService.GetPagedAsync(page, pageSize);
+        _ = WarmCacheAsync(result.Items);
+        return result;
     }
 
     [HttpGet("{id}")]
@@ -142,5 +154,19 @@ public class VideosController : ControllerBase
             ".ts" => "video/mp2t",
             _ => "application/octet-stream"
         };
+    }
+
+    private async Task WarmCacheAsync(List<VideoDto> videos)
+    {
+        var settings = await _settingsRepository.GetAsync();
+        if (settings is null || !settings.WarmCache || videos.Count == 0)
+            return;
+
+        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 2 };
+        await Parallel.ForEachAsync(videos, parallelOptions, async (video, ct) =>
+        {
+            await _thumbnailService.GetThumbnailAsync(video.Id);
+            await _previewService.GetPreviewAsync(video.Id, PreviewResolution.Preview144);
+        });
     }
 }

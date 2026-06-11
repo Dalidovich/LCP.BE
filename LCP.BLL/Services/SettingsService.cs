@@ -25,7 +25,8 @@ public class SettingsService : ISettingsService
         var entity = new SiteSettings
         {
             Theme = settings.Theme,
-            AnimeSpeedUp = settings.AnimeSpeedUp
+            AnimeSpeedUp = settings.AnimeSpeedUp,
+            WarmCache = settings.WarmCache
         };
 
         await _repository.UpdateAsync(entity);
@@ -35,6 +36,7 @@ public class SettingsService : ISettingsService
     private static SettingsDto MapToDto(SiteSettings s) => new()
     {
         Theme = s.Theme,
-        AnimeSpeedUp = s.AnimeSpeedUp
+        AnimeSpeedUp = s.AnimeSpeedUp,
+        WarmCache = s.WarmCache
     };
 }

@@ -39,8 +39,8 @@ public class Program
             builder.Services.AddScoped<IVideoService, VideoService>();
             builder.Services.AddScoped<ITagService, TagService>();
             builder.Services.AddScoped<ISettingsService, SettingsService>();
-            builder.Services.AddScoped<IThumbnailService, ThumbnailService>();
-            builder.Services.AddScoped<IPreviewService, PreviewService>();
+            builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
+            builder.Services.AddSingleton<IPreviewService, PreviewService>();
 
             builder.Services.AddHostedService<LibrarySeedService>();
             builder.Services.AddHostedService<LibrarySyncService>();
