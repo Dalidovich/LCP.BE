@@ -35,8 +35,10 @@ public class Program
 
             builder.Services.AddSingleton<IVideoRepository, JsonVideoRepository>();
             builder.Services.AddSingleton<ITagRepository, JsonTagRepository>();
+            builder.Services.AddSingleton<ISettingsRepository, JsonSettingsRepository>();
             builder.Services.AddScoped<IVideoService, VideoService>();
             builder.Services.AddScoped<ITagService, TagService>();
+            builder.Services.AddScoped<ISettingsService, SettingsService>();
             builder.Services.AddScoped<IThumbnailService, ThumbnailService>();
             builder.Services.AddScoped<IPreviewService, PreviewService>();
 

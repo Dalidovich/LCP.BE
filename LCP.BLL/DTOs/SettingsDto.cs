@@ -1,0 +1,7 @@
+namespace LCP.BLL.DTOs;
+
+public class SettingsDto
+{
+    public string Theme { get; set; } = "dark";
+    public bool AnimeSpeedUp { get; set; }
+}

@@ -12,15 +12,18 @@ public class LibrarySeedService : IHostedService
 {
     private readonly IVideoRepository _videoRepository;
     private readonly ITagRepository _tagRepository;
+    private readonly ISettingsRepository _settingsRepository;
     private readonly LibrarySettings _settings;
 
     public LibrarySeedService(
         IVideoRepository videoRepository,
         ITagRepository tagRepository,
+        ISettingsRepository settingsRepository,
         IOptions<LibrarySettings> settings)
     {
         _videoRepository = videoRepository;
         _tagRepository = tagRepository;
+        _settingsRepository = settingsRepository;
         _settings = settings.Value;
     }
 
@@ -46,6 +49,12 @@ public class LibrarySeedService : IHostedService
             {
                 await SeedTagsAsync(rootPath);
             }
+        }
+
+        var settingsFilePath = _settings.ResolveSystemFilePath(_settings.SettingsFilePath);
+        if (!File.Exists(settingsFilePath))
+        {
+            await _settingsRepository.UpdateAsync(new SiteSettings());
         }
     }
 
