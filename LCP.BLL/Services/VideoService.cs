@@ -50,6 +50,18 @@ public class VideoService : IVideoService
         return video is null ? null : MapToDto(video);
     }
 
+    public async Task<List<VideoDto>> GetByCollectionIdAsync(string collectionId)
+    {
+        var videos = await _repository.GetByCollectionIdAsync(collectionId);
+        return videos.Select(MapToDto).ToList();
+    }
+
+    public async Task<List<CollectionDto>> GetAllCollectionIdsAsync()
+    {
+        var collections = await _repository.GetAllCollectionIdsAsync();
+        return collections.Select(c => new CollectionDto { Id = c.Id, Count = c.Count }).ToList();
+    }
+
     public async Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request)
     {
         var allEntries = await _repository.GetAllRawAsync();

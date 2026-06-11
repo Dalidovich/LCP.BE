@@ -60,6 +60,38 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
+    public async Task<List<VideoMetadata>> GetByCollectionIdAsync(string collectionId)
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            _cache ??= await LoadAsync();
+            return _cache.Where(v => v.CollectionId == collectionId).ToList();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<List<(string Id, int Count)>> GetAllCollectionIdsAsync()
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            _cache ??= await LoadAsync();
+            return _cache
+                .Where(v => v.CollectionId is not null)
+                .GroupBy(v => v.CollectionId!)
+                .Select(g => (Id: g.Key, Count: g.Count()))
+                .ToList();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     public async Task<VideoMetadata?> GetByIdAsync(string id)
     {
         await _lock.WaitAsync();
