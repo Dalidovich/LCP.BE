@@ -12,32 +12,43 @@ public class VideoService : IVideoService
     private readonly IVideoRepository _repository;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
+    private readonly ISettingsRepository _settingsRepository;
     private readonly string _libraryRootPath;
 
     public VideoService(
         IVideoRepository repository,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
+        ISettingsRepository settingsRepository,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
+        _settingsRepository = settingsRepository;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
     public async Task<List<VideoDto>> GetAllAsync()
     {
         var videos = await _repository.GetAllRawAsync();
-        return videos.Select(MapToDto).ToList();
+        var ordered = await OrderIfStatisticsModeAsync(videos);
+        return ordered.Select(MapToDto).ToList();
     }
 
     public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize)
     {
-        var (items, totalCount) = await _repository.GetPagedAsync(page, pageSize);
+        var videos = await _repository.GetAllRawAsync();
+        var ordered = await OrderIfStatisticsModeAsync(videos);
+        var totalCount = ordered.Count;
+        var items = ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(MapToDto)
+            .ToList();
         return new PagedResult<VideoDto>
         {
-            Items = items.Select(MapToDto).ToList(),
+            Items = items,
             Page = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -120,6 +131,16 @@ public class VideoService : IVideoService
         _previewService.InvalidateCache(id);
         await _repository.SaveAllAsync(allEntries);
         return MapToDto(entry);
+    }
+
+    private async Task<List<VideoMetadata>> OrderIfStatisticsModeAsync(List<VideoMetadata> videos)
+    {
+        var settings = await _settingsRepository.GetAsync();
+        if (settings is not null && settings.StatisticsMode)
+        {
+            return videos.OrderBy(v => v.LastTimeWatched ?? DateTime.MinValue).ToList();
+        }
+        return videos;
     }
 
     private static VideoDto MapToDto(VideoMetadata v) => new()

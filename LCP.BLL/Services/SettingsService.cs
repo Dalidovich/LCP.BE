@@ -26,7 +26,9 @@ public class SettingsService : ISettingsService
         {
             Theme = settings.Theme,
             AnimeSpeedUp = settings.AnimeSpeedUp,
-            WarmCache = settings.WarmCache
+            WarmCache = settings.WarmCache,
+            Debug = settings.Debug,
+            StatisticsMode = settings.StatisticsMode
         };
 
         await _repository.UpdateAsync(entity);
@@ -37,6 +39,8 @@ public class SettingsService : ISettingsService
     {
         Theme = s.Theme,
         AnimeSpeedUp = s.AnimeSpeedUp,
-        WarmCache = s.WarmCache
+        WarmCache = s.WarmCache,
+        Debug = s.Debug,
+        StatisticsMode = s.StatisticsMode
     };
 }
