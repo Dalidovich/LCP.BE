@@ -101,7 +101,8 @@ public class LibrarySeedService : IHostedService
                 SystemName = Path.GetFileNameWithoutExtension(file),
                 IsDeleted = false,
                 Duration = duration,
-                PreviewSlices = PreviewSlice.CalculateSlices(duration)
+                PreviewSlices = PreviewSlice.CalculateSlices(duration),
+                ThumbnailTimecode = 2 > duration ? duration : 2
             });
         }
 
