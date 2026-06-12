@@ -11,4 +11,5 @@ public class UpdateVideoRequest
     public VideoType? Type { get; set; }
     public List<string>? Tags { get; set; }
     public double? ThumbnailTimecode { get; set; }
+    public DateTime? LastTimeWatched { get; set; }
 }

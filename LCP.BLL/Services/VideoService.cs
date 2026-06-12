@@ -85,6 +85,8 @@ public class VideoService : IVideoService
             entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
             _thumbnailService.InvalidateCache(id);
         }
+        if (request.LastTimeWatched is not null)
+            entry.LastTimeWatched = request.LastTimeWatched;
 
         await _repository.SaveAllAsync(allEntries);
         return MapToDto(entry);
@@ -134,6 +136,7 @@ public class VideoService : IVideoService
         IsDeleted = v.IsDeleted,
         ThumbnailTimecode = v.ThumbnailTimecode,
         Duration = v.Duration,
+        LastTimeWatched = v.LastTimeWatched,
         PreviewSlices = [.. v.PreviewSlices]
     };
 }
