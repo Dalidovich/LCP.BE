@@ -95,15 +95,15 @@ class PreviewSlice {
 | GET | `/api/videos/{id}` | Get single video (even if deleted) |
 | PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags, ThumbnailTimecode) |
 | DELETE | `/api/videos/{id}` | Soft delete (sets IsDeleted=true, returns 204) |
-| GET | `/api/videos/{id}/stream` | Stream video file (supports HTTP Range for seeking) |
+| GET | `/api/videos/{id}/similar?page=1&pageSize=20` | Paginated similar videos by tag overlap |
 | GET | `/api/videos/{id}/thumbnail?t=30&noCache=false` | Return JPEG thumbnail frame (image/jpeg). `t` seeks to a specific second; omit for stored ThumbnailTimecode |
 | POST | `/api/videos/{id}/regenerate-slices` | Regenerate random preview slices for a video |
 | GET | `/api/videos/{id}/preview?resolution=144` | Return 25s MP4 preview clip (video/mp4, supports Range). Resolution: `Preview144` or `Preview360` |
 | GET | `/api/tags` | List all master tags |
 | POST | `/api/tags` | Add a tag (body: plain string) |
 | DELETE | `/api/tags/{tag}` | Remove a tag |
-| GET | `/api/collections` | List all collection IDs with video count |
-| GET | `/api/collections/{collectionId}/videos` | List videos in a collection |
+| GET | `/api/collections?page=1&pageSize=20` | Paginated list of collection IDs with video count |
+| GET | `/api/collections/{collectionId}/videos?page=1&pageSize=20` | Paginated videos in a collection |
 | GET | `/api/settings` | Get site settings (Theme, AnimeSpeedUp, WarmCache) |
 | PUT | `/api/settings` | Update site settings |
 | POST | `/api/settings/check-password` | Check if password matches stored hash |

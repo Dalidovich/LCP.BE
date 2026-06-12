@@ -88,9 +88,15 @@ public class VideosController : ControllerBase
     }
 
     [HttpGet("{id}/similar")]
-    public async Task<ActionResult<List<VideoDto>>> GetSimilar(string id)
+    public async Task<ActionResult<PagedResult<VideoDto>>> GetSimilar(
+        string id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var result = await _videoService.GetSimilarAsync(id);
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        var result = await _videoService.GetSimilarAsync(id, page, pageSize);
         return result;
     }
 

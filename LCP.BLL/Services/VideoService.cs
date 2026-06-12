@@ -71,16 +71,40 @@ public class VideoService : IVideoService
         return video is null ? null : MapToDto(video);
     }
 
-    public async Task<List<VideoDto>> GetByCollectionIdAsync(string collectionId)
+    public async Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20)
     {
         var videos = await _repository.GetByCollectionIdAsync(collectionId);
-        return videos.Select(MapToDto).ToList();
+        var totalCount = videos.Count;
+        var items = videos
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(MapToDto)
+            .ToList();
+        return new PagedResult<VideoDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
     }
 
-    public async Task<List<CollectionDto>> GetAllCollectionIdsAsync()
+    public async Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20)
     {
         var collections = await _repository.GetAllCollectionIdsAsync();
-        return collections.Select(c => new CollectionDto { Id = c.Id, Count = c.Count }).ToList();
+        var totalCount = collections.Count;
+        var items = collections
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new CollectionDto { Id = c.Id, Count = c.Count })
+            .ToList();
+        return new PagedResult<CollectionDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
     }
 
     public async Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request)
@@ -149,18 +173,30 @@ public class VideoService : IVideoService
         return MapToDto(entry);
     }
 
-    public async Task<List<VideoDto>> GetSimilarAsync(string id)
+    public async Task<PagedResult<VideoDto>> GetSimilarAsync(string id, int page = 1, int pageSize = 20)
     {
         var source = await _repository.GetByIdAsync(id);
-        if (source is null) return [];
+        if (source is null) return new PagedResult<VideoDto> { Page = page, PageSize = pageSize };
 
         var tags = source.Tags.Select(t => t.ToLowerInvariant()).ToList();
-        if (tags.Count == 0) return [];
+        if (tags.Count == 0) return new PagedResult<VideoDto> { Page = page, PageSize = pageSize };
 
         var allVideos = await _repository.GetAllRawAsync();
         var filtered = allVideos.Where(v => v.Id != id).ToList();
 
-        return ScoreAndInterleave(tags, filtered);
+        var scored = ScoreAndInterleave(tags, filtered);
+        var totalCount = scored.Count;
+        var items = scored
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+        return new PagedResult<VideoDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
     }
 
     private List<VideoDto> ScoreAndInterleave(List<string> queryTags, List<VideoMetadata> videos)

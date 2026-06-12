@@ -28,17 +28,28 @@ public class CollectionsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<CollectionDto>>> GetAll()
+    public async Task<ActionResult<PagedResult<CollectionDto>>> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        return await _videoService.GetAllCollectionIdsAsync();
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        return await _videoService.GetAllCollectionIdsAsync(page, pageSize);
     }
 
     [HttpGet("{collectionId}/videos")]
-    public async Task<ActionResult<List<VideoDto>>> GetVideos(string collectionId)
+    public async Task<ActionResult<PagedResult<VideoDto>>> GetVideos(
+        string collectionId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var videos = await _videoService.GetByCollectionIdAsync(collectionId);
-        _ = WarmCacheAsync(videos);
-        return videos;
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        var result = await _videoService.GetByCollectionIdAsync(collectionId, page, pageSize);
+        _ = WarmCacheAsync(result.Items);
+        return result;
     }
 
     private async Task WarmCacheAsync(List<VideoDto> videos)
