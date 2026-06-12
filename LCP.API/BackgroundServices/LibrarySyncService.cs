@@ -12,12 +12,14 @@ namespace LCP.API.BackgroundServices;
 public class LibrarySyncService : IHostedService
 {
     private readonly IVideoRepository _repository;
+    private readonly ITagRepository _tagRepository;
     private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
-    public LibrarySyncService(IVideoRepository repository, ISmartGroupingService smartGroupingService, IOptions<LibrarySettings> settings)
+    public LibrarySyncService(IVideoRepository repository, ITagRepository tagRepository, ISmartGroupingService smartGroupingService, IOptions<LibrarySettings> settings)
     {
         _repository = repository;
+        _tagRepository = tagRepository;
         _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
     }
@@ -80,6 +82,19 @@ public class LibrarySyncService : IHostedService
         }
 
         if (changed)
+        {
+            await _repository.SaveAllAsync(allEntries);
+        }
+
+        var masterTags = await _tagRepository.GetAllAsync();
+        var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
+        var tagChanged = false;
+        foreach (var entry in allEntries)
+        {
+            var removed = entry.Tags.RemoveAll(t => !masterSet.Contains(t.ToLowerInvariant()));
+            if (removed > 0) tagChanged = true;
+        }
+        if (tagChanged)
         {
             await _repository.SaveAllAsync(allEntries);
         }

@@ -80,6 +80,13 @@ public class VideosController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("{id}/similar")]
+    public async Task<ActionResult<List<VideoDto>>> GetSimilar(string id)
+    {
+        var result = await _videoService.GetSimilarAsync(id);
+        return result;
+    }
+
     [HttpGet("{id}/stream")]
     public async Task<IActionResult> Stream(string id)
     {

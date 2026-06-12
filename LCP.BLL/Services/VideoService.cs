@@ -10,6 +10,7 @@ namespace LCP.BLL.Services;
 public class VideoService : IVideoService
 {
     private readonly IVideoRepository _repository;
+    private readonly ITagRepository _tagRepository;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
@@ -17,12 +18,14 @@ public class VideoService : IVideoService
 
     public VideoService(
         IVideoRepository repository,
+        ITagRepository tagRepository,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
         ISettingsRepository settingsRepository,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
+        _tagRepository = tagRepository;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
         _settingsRepository = settingsRepository;
@@ -90,7 +93,13 @@ public class VideoService : IVideoService
         if (request.Type is not null)
             entry.Type = request.Type.Value;
         if (request.Tags is not null)
+        {
+            var masterTags = await _tagRepository.GetAllAsync();
+            var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
+            if (!request.Tags.All(t => masterSet.Contains(t.ToLowerInvariant())))
+                return null;
             entry.Tags = request.Tags;
+        }
         if (request.ThumbnailTimecode is not null)
         {
             entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
@@ -131,6 +140,48 @@ public class VideoService : IVideoService
         _previewService.InvalidateCache(id);
         await _repository.SaveAllAsync(allEntries);
         return MapToDto(entry);
+    }
+
+    public async Task<List<VideoDto>> GetSimilarAsync(string id)
+    {
+        var source = await _repository.GetByIdAsync(id);
+        if (source is null) return [];
+
+        var sourceTags = source.Tags.Select(t => t.ToLowerInvariant()).ToHashSet();
+        if (sourceTags.Count == 0) return [];
+
+        var allVideos = await _repository.GetAllRawAsync();
+        var maxTagCount = sourceTags.Count;
+
+        var scored = new List<(VideoMetadata Video, int Count, double Percent)>();
+        foreach (var video in allVideos)
+        {
+            if (video.Id == id) continue;
+
+            var matchCount = video.Tags.Count(t => sourceTags.Contains(t.ToLowerInvariant()));
+            if (matchCount == 0) continue;
+
+            var videoTagCount = video.Tags.Count;
+            var percent = matchCount / (double)Math.Max(maxTagCount, videoTagCount);
+            scored.Add((video, matchCount, percent));
+        }
+
+        var byCount = scored.OrderByDescending(s => s.Count).ThenByDescending(s => s.Percent).ToList();
+        var byPercent = scored.OrderByDescending(s => s.Percent).ThenByDescending(s => s.Count).ToList();
+
+        var seen = new HashSet<string>();
+        var result = new List<VideoDto>();
+        var max = Math.Max(byCount.Count, byPercent.Count);
+
+        for (var i = 0; i < max; i++)
+        {
+            if (i < byCount.Count && seen.Add(byCount[i].Video.Id))
+                result.Add(MapToDto(byCount[i].Video));
+            if (i < byPercent.Count && seen.Add(byPercent[i].Video.Id))
+                result.Add(MapToDto(byPercent[i].Video));
+        }
+
+        return result;
     }
 
     private async Task<List<VideoMetadata>> OrderIfStatisticsModeAsync(List<VideoMetadata> videos)
