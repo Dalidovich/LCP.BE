@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
@@ -11,11 +12,13 @@ namespace LCP.API.BackgroundServices;
 public class LibrarySyncService : IHostedService
 {
     private readonly IVideoRepository _repository;
+    private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
-    public LibrarySyncService(IVideoRepository repository, IOptions<LibrarySettings> settings)
+    public LibrarySyncService(IVideoRepository repository, ISmartGroupingService smartGroupingService, IOptions<LibrarySettings> settings)
     {
         _repository = repository;
+        _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
     }
 
@@ -79,6 +82,11 @@ public class LibrarySyncService : IHostedService
         if (changed)
         {
             await _repository.SaveAllAsync(allEntries);
+        }
+
+        if (_settings.SmartVideoGrouping)
+        {
+            await _smartGroupingService.GroupVideosAsync();
         }
     }
 

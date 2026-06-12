@@ -41,6 +41,7 @@ public class Program
             builder.Services.AddScoped<ISettingsService, SettingsService>();
             builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
             builder.Services.AddSingleton<IPreviewService, PreviewService>();
+            builder.Services.AddSingleton<ISmartGroupingService, SmartGroupingService>();
 
             builder.Services.AddHostedService<LibrarySeedService>();
             builder.Services.AddHostedService<LibrarySyncService>();

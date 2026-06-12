@@ -73,13 +73,18 @@ class PreviewSlice {
   "LibrarySettings": {
     "JsonFilePath": "library.json",
     "TagsFilePath": "tags.json",
-    "LibraryRootPath": "D:\\Media"
+    "SettingsFilePath": "settings.json",
+    "LibraryRootPath": "D:\\Media",
+    "Password": "",
+    "SmartVideoGrouping": false
   }
 }
 ```
 
-- `JsonFilePath` / `TagsFilePath` — if relative, resolved under `{LibraryRootPath}\SYSTEMFILES\`
+- `JsonFilePath` / `TagsFilePath` / `SettingsFilePath` — if relative, resolved under `{LibraryRootPath}\SYSTEMFILES\`
 - `LibraryRootPath` — root directory for video files. Full paths resolved as `LibraryRootPath + video.RelativePath`.
+- `Password` — optional password for frontend auth check via `POST /api/settings/check-password`
+- `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
 
 ## API Endpoints
 
@@ -92,19 +97,51 @@ class PreviewSlice {
 | DELETE | `/api/videos/{id}` | Soft delete (sets IsDeleted=true, returns 204) |
 | GET | `/api/videos/{id}/stream` | Stream video file (supports HTTP Range for seeking) |
 | GET | `/api/videos/{id}/thumbnail?t=30&noCache=false` | Return JPEG thumbnail frame (image/jpeg). `t` seeks to a specific second; omit for stored ThumbnailTimecode |
+| POST | `/api/videos/{id}/regenerate-slices` | Regenerate random preview slices for a video |
 | GET | `/api/videos/{id}/preview?resolution=144` | Return 25s MP4 preview clip (video/mp4, supports Range). Resolution: `Preview144` or `Preview360` |
 | GET | `/api/tags` | List all master tags |
 | POST | `/api/tags` | Add a tag (body: plain string) |
 | DELETE | `/api/tags/{tag}` | Remove a tag |
+| GET | `/api/collections` | List all collection IDs with video count |
+| GET | `/api/collections/{collectionId}/videos` | List videos in a collection |
+| GET | `/api/settings` | Get site settings (Theme, AnimeSpeedUp, WarmCache) |
+| PUT | `/api/settings` | Update site settings |
+| POST | `/api/settings/check-password` | Check if password matches stored hash |
 
 ## Startup Jobs (`LCP.API/BackgroundServices/`)
 
 | Service | Order | Description |
 |---|---|---|
-| `LibrarySeedService` | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags |
-| `LibrarySyncService` | 2nd | Bidirectional sync: marks JSON entries `IsDeleted=true` when file is missing from disk; adds new JSON entries for files found on disk |
+| `LibrarySeedService` | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; runs Smart Video Grouping when enabled |
+| `LibrarySyncService` | 2nd | Bidirectional sync: marks JSON entries `IsDeleted=true` when file is missing from disk; adds new JSON entries for files found on disk; runs Smart Video Grouping when enabled |
 
 Both run once on startup. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
+
+## Smart Video Grouping
+
+When `SmartVideoGrouping: true` in `appsettings.json`, the seed and sync jobs automatically assign `CollectionId` to videos based on their `SystemName`:
+
+1. Videos with an existing `CollectionId` are **never touched**
+2. For each video without a `CollectionId`, a "clean name" is derived by:
+   - Lowercasing
+   - Stripping `ep` / `ep{NUMBER}` / `ep {NUMBER}` patterns (case insensitive, word-boundary aware)
+   - Stripping trailing numbers
+   - Trimming whitespace
+3. Videos with the same clean name form a **group**; the clean name becomes the group's `CollectionId`
+4. Single-video groups have their `CollectionId` set to `"default"`
+5. Videos with empty or unparsable `SystemName` also go into `"default"`
+6. **Prefix matching**: a solo video whose clean name starts with a multi-video group's key is absorbed into that group
+
+**Example:**
+```
+funny video cat 1        → clean: "funny video cat"    → group "funny video cat"
+funny video cat ep 5     → clean: "funny video cat"    → group "funny video cat"
+funny video dog ep1      → clean: "funny video dog"    → group "funny video dog"
+funny video dog and puppet → clean: "funny video dog and puppet" → prefix match → group "funny video dog"
+funny video bird         → clean: "funny video bird"   → group "default"
+```
+
+Deleted videos are included in grouping logic.
 
 ## Key Conventions
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
@@ -13,17 +14,20 @@ public class LibrarySeedService : IHostedService
     private readonly IVideoRepository _videoRepository;
     private readonly ITagRepository _tagRepository;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
     public LibrarySeedService(
         IVideoRepository videoRepository,
         ITagRepository tagRepository,
         ISettingsRepository settingsRepository,
+        ISmartGroupingService smartGroupingService,
         IOptions<LibrarySettings> settings)
     {
         _videoRepository = videoRepository;
         _tagRepository = tagRepository;
         _settingsRepository = settingsRepository;
+        _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
     }
 
@@ -55,6 +59,11 @@ public class LibrarySeedService : IHostedService
         if (!File.Exists(settingsFilePath))
         {
             await _settingsRepository.UpdateAsync(new SiteSettings());
+        }
+
+        if (_settings.SmartVideoGrouping)
+        {
+            await _smartGroupingService.GroupVideosAsync();
         }
     }
 
