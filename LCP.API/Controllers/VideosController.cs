@@ -14,20 +14,20 @@ public class VideosController : ControllerBase
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
-    private readonly ITagRepository _tagRepository;
+    private readonly ITagService _tagService;
 
     public VideosController(
         IVideoService videoService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
         ISettingsRepository settingsRepository,
-        ITagRepository tagRepository)
+        ITagService tagService)
     {
         _videoService = videoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
         _settingsRepository = settingsRepository;
-        _tagRepository = tagRepository;
+        _tagService = tagService;
     }
 
     [HttpGet]
@@ -47,13 +47,8 @@ public class VideosController : ControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 20;
 
-        if (tags is { Count: > 0 })
-        {
-            var masterTags = await _tagRepository.GetAllAsync();
-            var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
-            if (!tags.All(t => masterSet.Contains(t.ToLowerInvariant())))
-                return BadRequest();
-        }
+        if (tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(tags))
+            return BadRequest();
 
         var result = await _videoService.GetPagedAsync(page, pageSize, tags);
         _ = WarmCacheAsync(result.Items);

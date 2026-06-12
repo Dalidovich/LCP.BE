@@ -5,4 +5,5 @@ public interface ITagService
     Task<List<string>> GetAllAsync();
     Task AddAsync(string tag);
     Task<bool> RemoveAsync(string tag);
+    Task<bool> ExistsAllAsync(List<string> tags);
 }

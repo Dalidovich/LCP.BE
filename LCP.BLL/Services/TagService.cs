@@ -24,6 +24,13 @@ public class TagService : ITagService
         await _repository.AddAsync(tag);
     }
 
+    public async Task<bool> ExistsAllAsync(List<string> tags)
+    {
+        var masterTags = await _repository.GetAllAsync();
+        var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
+        return tags.All(t => masterSet.Contains(t.ToLowerInvariant()));
+    }
+
     public async Task<bool> RemoveAsync(string tag)
     {
         var tags = await _repository.GetAllAsync();
