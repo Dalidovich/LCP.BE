@@ -5,7 +5,7 @@ namespace LCP.BLL.Interfaces;
 public interface IVideoService
 {
     Task<List<VideoDto>> GetAllAsync();
-    Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize);
+    Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null);
     Task<VideoDto?> GetByIdAsync(string id);
     Task<List<VideoDto>> GetByCollectionIdAsync(string collectionId);
     Task<List<CollectionDto>> GetAllCollectionIdsAsync();

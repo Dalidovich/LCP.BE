@@ -39,10 +39,17 @@ public class VideoService : IVideoService
         return ordered.Select(MapToDto).ToList();
     }
 
-    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize)
+    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null)
     {
         var videos = await _repository.GetAllRawAsync();
         var ordered = await OrderIfStatisticsModeAsync(videos);
+
+        if (tags is { Count: > 0 })
+        {
+            var tagSet = tags.Select(t => t.ToLowerInvariant()).ToHashSet();
+            ordered = ordered.Where(v => v.Tags.Any(t => tagSet.Contains(t.ToLowerInvariant()))).ToList();
+        }
+
         var totalCount = ordered.Count;
         var items = ordered
             .Skip((page - 1) * pageSize)
@@ -147,18 +154,24 @@ public class VideoService : IVideoService
         var source = await _repository.GetByIdAsync(id);
         if (source is null) return [];
 
-        var sourceTags = source.Tags.Select(t => t.ToLowerInvariant()).ToHashSet();
-        if (sourceTags.Count == 0) return [];
+        var tags = source.Tags.Select(t => t.ToLowerInvariant()).ToList();
+        if (tags.Count == 0) return [];
 
         var allVideos = await _repository.GetAllRawAsync();
-        var maxTagCount = sourceTags.Count;
+        var filtered = allVideos.Where(v => v.Id != id).ToList();
+
+        return ScoreAndInterleave(tags, filtered);
+    }
+
+    private List<VideoDto> ScoreAndInterleave(List<string> queryTags, List<VideoMetadata> videos)
+    {
+        var querySet = queryTags.ToHashSet();
+        var maxTagCount = queryTags.Count;
 
         var scored = new List<(VideoMetadata Video, int Count, double Percent)>();
-        foreach (var video in allVideos)
+        foreach (var video in videos)
         {
-            if (video.Id == id) continue;
-
-            var matchCount = video.Tags.Count(t => sourceTags.Contains(t.ToLowerInvariant()));
+            var matchCount = video.Tags.Count(t => querySet.Contains(t.ToLowerInvariant()));
             if (matchCount == 0) continue;
 
             var videoTagCount = video.Tags.Count;

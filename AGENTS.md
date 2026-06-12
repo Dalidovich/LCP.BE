@@ -91,7 +91,7 @@ class PreviewSlice {
 | Method | Route | Description |
 |---|---|---|
 | GET | `/api/videos` | List all videos (including deleted, marked with `isDeleted`) |
-| GET | `/api/videos/paged?page=1&pageSize=20` | Paginated list (non-deleted only) |
+| GET | `/api/videos/paged?page=1&pageSize=20&tags=sci-fi&tags=thriller` | Paginated list (non-deleted only). Optional `tags` param filters by any matching tag |
 | GET | `/api/videos/{id}` | Get single video (even if deleted) |
 | PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags, ThumbnailTimecode) |
 | DELETE | `/api/videos/{id}` | Soft delete (sets IsDeleted=true, returns 204) |
