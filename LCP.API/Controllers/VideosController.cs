@@ -31,9 +31,9 @@ public class VideosController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<VideoDto>>> GetAll()
+    public async Task<ActionResult<List<VideoDto>>> GetAll([FromQuery] string? search = null)
     {
-        var videos = await _videoService.GetAllAsync();
+        var videos = await _videoService.GetAllAsync(search);
         _ = WarmCacheAsync(videos);
         return videos;
     }
@@ -42,7 +42,8 @@ public class VideosController : ControllerBase
     public async Task<ActionResult<PagedResult<VideoDto>>> GetPaged(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] List<string>? tags = null)
+        [FromQuery] List<string>? tags = null,
+        [FromQuery] string? search = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 20;
@@ -50,7 +51,7 @@ public class VideosController : ControllerBase
         if (tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(tags))
             return BadRequest();
 
-        var result = await _videoService.GetPagedAsync(page, pageSize, tags);
+        var result = await _videoService.GetPagedAsync(page, pageSize, tags, search);
         _ = WarmCacheAsync(result.Items);
         return result;
     }

@@ -1,4 +1,5 @@
 using LCP.BLL.DTOs;
+using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -32,17 +33,46 @@ public class VideoService : IVideoService
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
-    public async Task<List<VideoDto>> GetAllAsync()
+    public async Task<List<VideoDto>> GetAllAsync(string? search = null)
     {
         var videos = await _repository.GetAllRawAsync();
-        var ordered = await OrderIfStatisticsModeAsync(videos);
+        List<VideoMetadata> ordered;
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            ordered = videos
+                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
+                .Where(x => x.Score >= 0.2)
+                .OrderByDescending(x => x.Score)
+                .Select(x => x.Video)
+                .ToList();
+        }
+        else
+        {
+            ordered = await OrderIfStatisticsModeAsync(videos);
+        }
+
         return ordered.Select(MapToDto).ToList();
     }
 
-    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null)
+    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null, string? search = null)
     {
         var videos = await _repository.GetAllRawAsync();
-        var ordered = await OrderIfStatisticsModeAsync(videos);
+        List<VideoMetadata> ordered;
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            ordered = videos
+                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
+                .Where(x => x.Score >= 0.2)
+                .OrderByDescending(x => x.Score)
+                .Select(x => x.Video)
+                .ToList();
+        }
+        else
+        {
+            ordered = await OrderIfStatisticsModeAsync(videos);
+        }
 
         if (tags is { Count: > 0 })
         {
