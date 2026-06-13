@@ -16,6 +16,7 @@ public class PreviewService : IPreviewService
     private readonly string _libraryRootPath;
     private readonly ILogger<PreviewService> _logger;
     private static readonly ConcurrentDictionary<string, byte[]> Cache = new();
+    private const int MaxCacheSize = 100;
 
     public PreviewService(
         IVideoRepository repository,
@@ -51,8 +52,19 @@ public class PreviewService : IPreviewService
         var data = await Task.Run(() => GeneratePreview(videoPath, resolution, slices));
         if (data is null) return null;
 
+        EvictIfNeeded();
         Cache[cacheKey] = data;
         return new PreviewResult(data, DateTime.UtcNow);
+    }
+
+    private static void EvictIfNeeded()
+    {
+        if (Cache.Count >= MaxCacheSize)
+        {
+            var key = Cache.Keys.FirstOrDefault();
+            if (key is not null)
+                Cache.TryRemove(key, out _);
+        }
     }
 
     private static (int Width, int Height) GetFrameSize(PreviewResolution resolution) => resolution switch

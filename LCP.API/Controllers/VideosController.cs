@@ -66,6 +66,9 @@ public class VideosController : ControllerBase
     [HttpPatch("{id}")]
     public async Task<ActionResult<VideoDto>> Update(string id, UpdateVideoRequest request)
     {
+        if (request.Tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(request.Tags))
+            return BadRequest("One or more tags do not exist in the master list.");
+
         var video = await _videoService.UpdateAsync(id, request);
         if (video is null) return NotFound();
         return video;

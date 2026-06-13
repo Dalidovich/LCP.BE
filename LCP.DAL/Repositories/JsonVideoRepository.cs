@@ -32,20 +32,6 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
-    public async Task<List<VideoMetadata>> GetAllAsync()
-    {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            return [.. _cache];
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
-
     public async Task<List<VideoMetadata>> GetAllRawAsync()
     {
         await _lock.WaitAsync();

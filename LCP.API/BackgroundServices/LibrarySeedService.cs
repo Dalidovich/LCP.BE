@@ -1,11 +1,9 @@
-using System.Diagnostics;
-using System.Text.RegularExpressions;
+using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Options;
-using NReco.VideoConverter;
 
 namespace LCP.API.BackgroundServices;
 
@@ -44,14 +42,12 @@ public class LibrarySeedService : IHostedService
                 await SeedVideosAsync(rootPath);
             }
         }
-
-        var tags = await _tagRepository.GetAllAsync();
-        if (tags.Count == 0)
+        else
         {
-            var rootPath = _settings.LibraryRootPath;
-            if (!string.IsNullOrEmpty(rootPath) && Directory.Exists(rootPath))
+            var tags = await _tagRepository.GetAllAsync();
+            if (tags.Count == 0)
             {
-                await SeedTagsAsync(rootPath);
+                await SeedTagsAsync();
             }
         }
 
@@ -93,7 +89,7 @@ public class LibrarySeedService : IHostedService
         foreach (var file in files)
         {
             var relativePath = Path.GetRelativePath(rootPath, file);
-            var duration = ProbeDuration(file);
+            var duration = FFProbeHelper.ProbeDuration(file);
             videos.Add(new VideoMetadata
             {
                 Id = Guid.NewGuid().ToString(),
@@ -112,7 +108,7 @@ public class LibrarySeedService : IHostedService
         }
     }
 
-    private async Task SeedTagsAsync(string rootPath)
+    private async Task SeedTagsAsync()
     {
         var allEntries = await _videoRepository.GetAllRawAsync();
         var tags = allEntries
@@ -127,45 +123,6 @@ public class LibrarySeedService : IHostedService
         {
             await _tagRepository.AddAsync(tag);
         }
-    }
-
-    private static double ProbeDuration(string videoPath)
-    {
-        try
-        {
-            var probe = new FFMpegConverter();
-            probe.ExtractFFmpeg();
-
-            var ffmpegPath = Path.Combine(probe.FFMpegToolPath, probe.FFMpegExeName);
-            if (!File.Exists(ffmpegPath)) return 0;
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = ffmpegPath,
-                Arguments = $"-i \"{videoPath}\"",
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return 0;
-
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit(3000);
-
-            var match = Regex.Match(stderr, @"Duration: (\d+):(\d+):(\d+)\.(\d+)");
-            if (match.Success)
-            {
-                var h = int.Parse(match.Groups[1].Value);
-                var m = int.Parse(match.Groups[2].Value);
-                var s = int.Parse(match.Groups[3].Value);
-                var ms = int.Parse(match.Groups[4].Value.PadRight(3, '0')[..3]);
-                return new TimeSpan(0, h, m, s, ms).TotalSeconds;
-            }
-        }
-        catch { }
-        return 0;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

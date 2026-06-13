@@ -15,6 +15,7 @@ public class ThumbnailService : IThumbnailService
     private readonly string _libraryRootPath;
     private readonly ILogger<ThumbnailService> _logger;
     private static readonly ConcurrentDictionary<string, byte[]> Cache = new();
+    private const int MaxCacheSize = 100;
 
     public ThumbnailService(
         IVideoRepository repository,
@@ -45,6 +46,7 @@ public class ThumbnailService : IThumbnailService
         var data = await Task.Run(() => ExtractFrame(videoPath, video.ThumbnailTimecode));
         if (data is null) return null;
 
+        EvictIfNeeded();
         Cache[videoId] = data;
         return new ThumbnailResult(data, DateTime.UtcNow);
     }
@@ -61,6 +63,16 @@ public class ThumbnailService : IThumbnailService
         if (data is null) return null;
 
         return new ThumbnailResult(data, DateTime.UtcNow);
+    }
+
+    private static void EvictIfNeeded()
+    {
+        if (Cache.Count >= MaxCacheSize)
+        {
+            var key = Cache.Keys.FirstOrDefault();
+            if (key is not null)
+                Cache.TryRemove(key, out _);
+        }
     }
 
     private byte[]? ExtractFrame(string videoPath, double thumbnailTimecode)

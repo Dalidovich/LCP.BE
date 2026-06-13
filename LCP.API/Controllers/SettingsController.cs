@@ -33,12 +33,12 @@ public class SettingsController : ControllerBase
     }
 
     [HttpPost("check-password")]
-    public ActionResult<bool> CheckPassword([FromBody] string password)
+    public ActionResult<bool> CheckPassword([FromBody] PasswordRequest request)
     {
         var stored = _settings.Value.Password;
         if (string.IsNullOrEmpty(stored))
             return false;
 
-        return string.Equals(password, stored, StringComparison.Ordinal);
+        return string.Equals(request.Password, stored, StringComparison.Ordinal);
     }
 }

@@ -124,13 +124,7 @@ public class VideoService : IVideoService
         if (request.Type is not null)
             entry.Type = request.Type.Value;
         if (request.Tags is not null)
-        {
-            var masterTags = await _tagRepository.GetAllAsync();
-            var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
-            if (!request.Tags.All(t => masterSet.Contains(t.ToLowerInvariant())))
-                return null;
             entry.Tags = request.Tags;
-        }
         if (request.ThumbnailTimecode is not null)
         {
             entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
@@ -182,7 +176,7 @@ public class VideoService : IVideoService
         if (tags.Count == 0) return new PagedResult<VideoDto> { Page = page, PageSize = pageSize };
 
         var allVideos = await _repository.GetAllRawAsync();
-        var filtered = allVideos.Where(v => v.Id != id).ToList();
+        var filtered = allVideos.Where(v => v.Id != id && !v.IsDeleted).ToList();
 
         var scored = ScoreAndInterleave(tags, filtered);
         var totalCount = scored.Count;
