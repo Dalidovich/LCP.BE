@@ -28,7 +28,8 @@ public class SettingsService : ISettingsService
             AnimeSpeedUp = settings.AnimeSpeedUp,
             WarmCache = settings.WarmCache,
             Debug = settings.Debug,
-            StatisticsMode = settings.StatisticsMode
+            StatisticsMode = settings.StatisticsMode,
+            VideoTypeFilter = settings.VideoTypeFilter
         };
 
         await _repository.UpdateAsync(entity);
@@ -41,6 +42,7 @@ public class SettingsService : ISettingsService
         AnimeSpeedUp = s.AnimeSpeedUp,
         WarmCache = s.WarmCache,
         Debug = s.Debug,
-        StatisticsMode = s.StatisticsMode
+        StatisticsMode = s.StatisticsMode,
+        VideoTypeFilter = s.VideoTypeFilter
     };
 }

@@ -52,6 +52,7 @@ public class VideoService : IVideoService
             ordered = await OrderIfStatisticsModeAsync(videos);
         }
 
+        ordered = await FilterByTypeAsync(ordered);
         return ordered.Select(MapToDto).ToList();
     }
 
@@ -73,6 +74,8 @@ public class VideoService : IVideoService
         {
             ordered = await OrderIfStatisticsModeAsync(videos);
         }
+
+        ordered = await FilterByTypeAsync(ordered);
 
         if (tags is { Count: > 0 })
         {
@@ -107,6 +110,7 @@ public class VideoService : IVideoService
     public async Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20)
     {
         var videos = await _repository.GetByCollectionIdAsync(collectionId);
+        videos = await FilterByTypeAsync(videos);
         var totalCount = videos.Count;
         var items = videos
             .Skip((page - 1) * pageSize)
@@ -124,7 +128,13 @@ public class VideoService : IVideoService
 
     public async Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20)
     {
-        var collections = await _repository.GetAllCollectionIdsAsync();
+        var videos = await _repository.GetAllRawAsync();
+        var filtered = await FilterByTypeAsync(videos);
+        var collections = filtered
+            .GroupBy(v => v.CollectionId ?? "default")
+            .Select(g => (Id: g.Key, Count: g.Count()))
+            .OrderBy(c => c.Id)
+            .ToList();
         var totalCount = collections.Count;
         var items = collections
             .Skip((page - 1) * pageSize)
@@ -210,6 +220,7 @@ public class VideoService : IVideoService
 
         var allVideos = await _repository.GetAllRawAsync();
         var filtered = allVideos.Where(v => v.Id != id && !v.IsDeleted).ToList();
+        filtered = await FilterByTypeAsync(filtered);
 
         var scored = ScoreAndInterleave(tags, filtered);
         var totalCount = scored.Count;
@@ -258,6 +269,16 @@ public class VideoService : IVideoService
         }
 
         return result;
+    }
+
+    private async Task<List<VideoMetadata>> FilterByTypeAsync(List<VideoMetadata> videos)
+    {
+        var settings = await _settingsRepository.GetAsync();
+        if (settings?.VideoTypeFilter is not { Count: > 0 })
+            return videos;
+
+        var filterSet = settings.VideoTypeFilter.ToHashSet();
+        return videos.Where(v => filterSet.Contains(v.Type)).ToList();
     }
 
     private async Task<List<VideoMetadata>> OrderIfStatisticsModeAsync(List<VideoMetadata> videos)

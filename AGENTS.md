@@ -64,6 +64,7 @@ class SiteSettings {
     WarmCache      : bool   (pre-generate thumbnails/previews on list fetches)
     Debug          : bool
     StatisticsMode : bool   (order videos by LastTimeWatched ascending)
+    VideoTypeFilter : List<VideoType> (empty = show all; filters GET /api/videos and GET /api/videos/paged)
 }
 ```
 
