@@ -47,7 +47,10 @@ public class VideoService : IVideoService
         if (tags is { Count: > 0 })
         {
             var tagSet = tags.Select(t => t.ToLowerInvariant()).ToHashSet();
-            ordered = ordered.Where(v => v.Tags.Any(t => tagSet.Contains(t.ToLowerInvariant()))).ToList();
+            ordered = ordered
+                .Where(v => v.Tags.Any(t => tagSet.Contains(t.ToLowerInvariant())))
+                .OrderByDescending(v => v.Tags.Count(t => tagSet.Contains(t.ToLowerInvariant())))
+                .ToList();
         }
 
         var totalCount = ordered.Count;
