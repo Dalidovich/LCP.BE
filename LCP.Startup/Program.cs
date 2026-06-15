@@ -76,8 +76,11 @@ public class Program
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("StartupSetting.json", optional: false, reloadOnChange: false);
 
-        if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
-            configBuilder.AddUserSecrets<Program>();
+        Console.WriteLine(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"));
+
+#if DEBUG
+        configBuilder.AddUserSecrets<Program>();
+#endif
 
         var config = configBuilder.Build();
 
