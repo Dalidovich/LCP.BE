@@ -72,11 +72,14 @@ public class Program
             Environment.Exit(1);
         }
 
-        var config = new ConfigurationBuilder()
+        var configBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("StartupSetting.json", optional: false, reloadOnChange: false)
-            .AddUserSecrets<Program>()
-            .Build();
+            .AddJsonFile("StartupSetting.json", optional: false, reloadOnChange: false);
+
+        if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
+            configBuilder.AddUserSecrets<Program>();
+
+        var config = configBuilder.Build();
 
         var backendPath = config["BackendPath"] ?? "";
         var frontendPath = config["FrontendPath"] ?? "";
