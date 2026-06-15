@@ -56,10 +56,17 @@ public class Program
         var configPath = Path.Combine(AppContext.BaseDirectory, "StartupSetting.json");
 
         if (!File.Exists(configPath))
-            Fail("StartupSetting.json not found next to executable.");
+        {
+            var defaultConfig = new StartupConfig("", "");
+            var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(configPath, json);
+            Console.Error.WriteLine($"StartupSetting.json created at:\n{configPath}\nEdit it with your paths and restart.");
+            Environment.Exit(1);
+        }
 
-        return JsonSerializer.Deserialize<StartupConfig>(await File.ReadAllTextAsync(configPath))
-            ?? Fail<StartupConfig>("Failed to parse StartupSetting.json.");
+        var result = JsonSerializer.Deserialize<StartupConfig>(await File.ReadAllTextAsync(configPath));
+        if (result is null) Fail("Failed to parse StartupSetting.json.");
+        return result!;
     }
 
     private static string ResolveDir(string path, string? subDir, string label)
@@ -80,13 +87,6 @@ public class Program
         info.UseShellExecute = false;
         Console.WriteLine($"Starting: {description}");
         return Process.Start(info)!;
-    }
-
-    private static T Fail<T>(string message)
-    {
-        Console.Error.WriteLine(message);
-        Environment.Exit(1);
-        throw new InvalidOperationException(message);
     }
 
     private static void Fail(string message)

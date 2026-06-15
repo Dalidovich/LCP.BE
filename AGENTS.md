@@ -16,7 +16,7 @@
 **Dependency flow:** `API → BLL → DAL → Domain` (no reverse dependencies)
 
 **Notes:**
-- `LCP.BLL/Helpers/` directory exists but is empty
+- `LCP.BLL/Helpers/` contains `FFProbeHelper.cs`, `SearchHelper.cs`
 - No test project exists yet
 
 ## Data Model
