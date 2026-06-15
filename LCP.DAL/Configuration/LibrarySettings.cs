@@ -13,6 +13,9 @@ public class LibrarySettings
 
     public string ResolveSystemFilePath(string relativePath)
     {
+        if (string.IsNullOrWhiteSpace(LibraryRootPath))
+            return string.Empty;
+
         return Path.IsPathRooted(relativePath)
             ? relativePath
             : Path.GetFullPath(Path.Combine(LibraryRootPath, "SYSTEMFILES", relativePath));

@@ -1,4 +1,13 @@
 {
-  "BackendPath": "D:\\repos\\LCP.BE",
-  "FrontendPath": "D:\\NodeProject\\LCP.FE"
+  "LibrarySettings": {
+    "JsonFilePath": "library.json",
+    "TagsFilePath": "tags.json",
+    "SettingsFilePath": "settings.json",
+    "LibraryRootPath": "",
+    "Password": "sturtupP",
+    "SmartVideoGrouping": true,
+    "WatchTimeThreshold": 30
+  },
+  "BackendPath": "",
+  "FrontendPath": ""
 }

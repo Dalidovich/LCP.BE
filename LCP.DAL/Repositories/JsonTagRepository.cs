@@ -18,6 +18,7 @@ public class JsonTagRepository : ITagRepository
     public JsonTagRepository(IOptions<LibrarySettings> settings)
     {
         _filePath = settings.Value.ResolveSystemFilePath(settings.Value.TagsFilePath);
+        if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -83,12 +84,16 @@ public class JsonTagRepository : ITagRepository
 
     private async Task<List<string>> LoadAsync()
     {
+        if (string.IsNullOrEmpty(_filePath)) return [];
+
         var json = await File.ReadAllTextAsync(_filePath);
         return JsonSerializer.Deserialize<List<string>>(json) ?? [];
     }
 
     private async Task SaveAsync(List<string> data)
     {
+        if (string.IsNullOrEmpty(_filePath)) return;
+
         var json = JsonSerializer.Serialize(data, JsonOptions);
         await File.WriteAllTextAsync(_filePath, json);
     }

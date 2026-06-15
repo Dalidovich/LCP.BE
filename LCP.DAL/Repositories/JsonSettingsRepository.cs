@@ -19,6 +19,7 @@ public class JsonSettingsRepository : ISettingsRepository
     public JsonSettingsRepository(IOptions<LibrarySettings> settings)
     {
         _filePath = settings.Value.ResolveSystemFilePath(settings.Value.SettingsFilePath);
+        if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -57,6 +58,8 @@ public class JsonSettingsRepository : ISettingsRepository
 
     private async Task<SiteSettings> LoadAsync()
     {
+        if (string.IsNullOrEmpty(_filePath)) return new SiteSettings();
+
         if (!File.Exists(_filePath))
         {
             return new SiteSettings();
@@ -68,6 +71,8 @@ public class JsonSettingsRepository : ISettingsRepository
 
     private async Task SaveAsync(SiteSettings data)
     {
+        if (string.IsNullOrEmpty(_filePath)) return;
+
         var json = JsonSerializer.Serialize(data, JsonOptions);
         await File.WriteAllTextAsync(_filePath, json);
     }

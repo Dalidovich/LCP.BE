@@ -13,12 +13,18 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        var sharedConfigPath = Environment.GetEnvironmentVariable("SHARED_CONFIG_PATH");
+
+        var configBuilder = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false)
+            .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
+
+        if (!string.IsNullOrEmpty(sharedConfigPath))
+            configBuilder.AddJsonFile(sharedConfigPath, optional: true);
+
         Log.Logger = new LoggerConfiguration()
-            .ReadFrom.Configuration(new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false)
-                .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
-                .Build())
+            .ReadFrom.Configuration(configBuilder.Build())
             .Enrich.FromLogContext()
             .WriteTo.Console()
             .CreateLogger();
@@ -26,6 +32,9 @@ public class Program
         try
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            if (!string.IsNullOrEmpty(sharedConfigPath))
+                builder.Configuration.AddJsonFile(sharedConfigPath, optional: true, reloadOnChange: false);
 
             builder.Services.AddControllers();
             builder.Services.AddSwaggerGen();

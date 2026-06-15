@@ -31,7 +31,7 @@ public class LibrarySeedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        EnsureSystemFilesDirectory();
+        if(!EnsureSystemFilesDirectory()) return;
 
         var allEntries = await _videoRepository.GetAllRawAsync();
         if (allEntries.Count == 0)
@@ -63,15 +63,16 @@ public class LibrarySeedService : IHostedService
         }
     }
 
-    private void EnsureSystemFilesDirectory()
+    private bool EnsureSystemFilesDirectory()
     {
-        if (string.IsNullOrEmpty(_settings.LibraryRootPath)) return;
+        if (string.IsNullOrEmpty(_settings.LibraryRootPath)) return false;
 
         var systemDir = Path.Combine(_settings.LibraryRootPath, "SYSTEMFILES");
         if (!Directory.Exists(systemDir))
         {
             Directory.CreateDirectory(systemDir);
         }
+        return true;
     }
 
     private async Task SeedVideosAsync(string rootPath)

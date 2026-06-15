@@ -19,6 +19,7 @@ public class JsonVideoRepository : IVideoRepository
     public JsonVideoRepository(IOptions<LibrarySettings> settings)
     {
         _filePath = settings.Value.ResolveSystemFilePath(settings.Value.JsonFilePath);
+        if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -147,12 +148,16 @@ public class JsonVideoRepository : IVideoRepository
 
     private async Task<List<VideoMetadata>> LoadAsync()
     {
+        if (string.IsNullOrEmpty(_filePath)) return [];
+
         var json = await File.ReadAllTextAsync(_filePath);
         return JsonSerializer.Deserialize<List<VideoMetadata>>(json) ?? [];
     }
 
     private async Task SaveAsync(List<VideoMetadata> data)
     {
+        if (string.IsNullOrEmpty(_filePath)) return;
+
         var json = JsonSerializer.Serialize(data, JsonOptions);
         await File.WriteAllTextAsync(_filePath, json);
     }

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace LCP.Startup;
 
@@ -7,14 +8,21 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
-        var config = await LoadConfigAsync();
-        var backendDir = ResolveDir(config.BackendPath, "LCP.API", "BackendPath");
-        var frontendDir = ResolveDir(config.FrontendPath, null, "FrontendPath");
+        var (cfg, backendPath, frontendPath) = await LoadConfigAsync();
+        var backendDir = ResolveDir(backendPath, "LCP.API", "BackendPath");
+        var frontendDir = ResolveDir(frontendPath, null, "FrontendPath");
+
+        var sharedConfigPath = Path.Combine(backendPath, "appsettings.json");
+        await WriteSharedConfigAsync(cfg, sharedConfigPath);
 
         var backend = StartProcess(new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"run --configuration Release --project \"{backendDir}\""
+            Arguments = $"run --configuration Release --project \"{backendDir}\"",
+            EnvironmentVariables =
+            {
+                ["SHARED_CONFIG_PATH"] = sharedConfigPath
+            }
         }, $"dotnet run --configuration Release --project \"{backendDir}\"");
 
         var frontend = StartProcess(new ProcessStartInfo
@@ -51,22 +59,50 @@ public class Program
         }
     }
 
-    private static async Task<StartupConfig> LoadConfigAsync()
+    private static async Task<(IConfigurationRoot Config, string BackendPath, string FrontendPath)> LoadConfigAsync()
     {
         var configPath = Path.Combine(AppContext.BaseDirectory, "StartupSetting.json");
 
         if (!File.Exists(configPath))
         {
-            var defaultConfig = new StartupConfig("", "");
+            var defaultConfig = new { BackendPath = "", FrontendPath = "" };
             var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(configPath, json);
             Console.Error.WriteLine($"StartupSetting.json created at:\n{configPath}\nEdit it with your paths and restart.");
             Environment.Exit(1);
         }
 
-        var result = JsonSerializer.Deserialize<StartupConfig>(await File.ReadAllTextAsync(configPath));
-        if (result is null) Fail("Failed to parse StartupSetting.json.");
-        return result!;
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("StartupSetting.json", optional: false, reloadOnChange: false)
+            .AddUserSecrets<Program>()
+            .Build();
+
+        var backendPath = config["BackendPath"] ?? "";
+        var frontendPath = config["FrontendPath"] ?? "";
+
+        if (string.IsNullOrWhiteSpace(backendPath) || string.IsNullOrWhiteSpace(frontendPath))
+            Fail("BackendPath or FrontendPath is empty in StartupSetting.json or user secrets.");
+
+        return (config, backendPath, frontendPath);
+    }
+
+    private static async Task WriteSharedConfigAsync(IConfigurationRoot config, string path)
+    {
+        var ls = new Dictionary<string, object?>
+        {
+            ["JsonFilePath"] = config["LibrarySettings:JsonFilePath"] ?? "library.json",
+            ["TagsFilePath"] = config["LibrarySettings:TagsFilePath"] ?? "tags.json",
+            ["SettingsFilePath"] = config["LibrarySettings:SettingsFilePath"] ?? "settings.json",
+            ["LibraryRootPath"] = config["LibrarySettings:LibraryRootPath"] ?? "",
+            ["Password"] = config["LibrarySettings:Password"] ?? "",
+            ["SmartVideoGrouping"] = bool.TryParse(config["LibrarySettings:SmartVideoGrouping"], out var sg) && sg
+        };
+
+        var root = new Dictionary<string, object?> { ["LibrarySettings"] = ls };
+        var json = JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json);
+        Console.WriteLine($"Wrote shared config: {path}");
     }
 
     private static string ResolveDir(string path, string? subDir, string label)
@@ -108,5 +144,4 @@ public class Program
         try { b.Kill(true); } catch { }
     }
 
-    private record StartupConfig(string BackendPath, string FrontendPath);
 }
