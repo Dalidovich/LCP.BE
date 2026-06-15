@@ -62,6 +62,7 @@ class SiteSettings {
     Theme          : string (default "dark")
     AnimeSpeedUp   : bool
     WarmCache      : bool   (pre-generate thumbnails/previews on list fetches)
+    RandomSort     : bool   (randomize video order for list endpoints; stable seed per server start + setting toggle)
     Debug          : bool
     StatisticsMode : bool   (order videos by LastTimeWatched ascending)
     VideoTypeFilter : List<VideoType> (empty = show all; filters GET /api/videos and GET /api/videos/paged)
@@ -99,6 +100,7 @@ class SiteSettings {
   "theme": "dark",
   "animeSpeedUp": false,
   "warmCache": false,
+  "randomSort": false,
   "debug": false,
   "statisticsMode": false
 }
@@ -220,7 +222,7 @@ Deleted videos are included in grouping logic.
 - **Logging** — Serilog to console only (no file output)
 - **Nullable enabled** — follow `?` annotations for nullable reference types
 - **No comments in code** — keep source files clean
-- **StatisticsMode** — when enabled, video listing ordered by `LastTimeWatched` ascending (least recently watched first)
+- **RandomSort** — when enabled, videos in `GET /api/videos`, `GET /api/videos/paged`, and `GET /api/collections/{id}/videos` are shuffled deterministically using a seed that persists per server start and regenerates when RandomSort is toggled off→on. This guarantees no duplicates or gaps across pagination requests since the order is stable for the same seed.
 - **Password check** — plain-text comparison of provided password against stored value; returns `false` if stored password is empty
 
 ## Build & Run

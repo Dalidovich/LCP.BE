@@ -27,6 +27,7 @@ public class SettingsService : ISettingsService
             Theme = settings.Theme,
             AnimeSpeedUp = settings.AnimeSpeedUp,
             WarmCache = settings.WarmCache,
+            RandomSort = settings.RandomSort,
             Debug = settings.Debug,
             StatisticsMode = settings.StatisticsMode,
             VideoTypeFilter = settings.VideoTypeFilter
@@ -41,6 +42,7 @@ public class SettingsService : ISettingsService
         Theme = s.Theme,
         AnimeSpeedUp = s.AnimeSpeedUp,
         WarmCache = s.WarmCache,
+        RandomSort = s.RandomSort,
         Debug = s.Debug,
         StatisticsMode = s.StatisticsMode,
         VideoTypeFilter = s.VideoTypeFilter

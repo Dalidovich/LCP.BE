@@ -16,6 +16,8 @@ public class VideoService : IVideoService
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
     private readonly string _libraryRootPath;
+    private static int? _randomSortSeed;
+    private static bool _randomSortWasEnabled;
 
     public VideoService(
         IVideoRepository repository,
@@ -49,7 +51,7 @@ public class VideoService : IVideoService
         }
         else
         {
-            ordered = await OrderIfStatisticsModeAsync(videos);
+            ordered = await ApplyOrderingAsync(videos);
         }
 
         ordered = await FilterByTypeAsync(ordered);
@@ -72,7 +74,7 @@ public class VideoService : IVideoService
         }
         else
         {
-            ordered = await OrderIfStatisticsModeAsync(videos);
+            ordered = await ApplyOrderingAsync(videos);
         }
 
         ordered = await FilterByTypeAsync(ordered);
@@ -111,6 +113,7 @@ public class VideoService : IVideoService
     {
         var videos = await _repository.GetByCollectionIdAsync(collectionId);
         videos = await FilterByTypeAsync(videos);
+        videos = await ApplyOrderingAsync(videos);
         var totalCount = videos.Count;
         var items = videos
             .Skip((page - 1) * pageSize)
@@ -281,13 +284,30 @@ public class VideoService : IVideoService
         return videos.Where(v => filterSet.Contains(v.Type)).ToList();
     }
 
-    private async Task<List<VideoMetadata>> OrderIfStatisticsModeAsync(List<VideoMetadata> videos)
+    private async Task<List<VideoMetadata>> ApplyOrderingAsync(List<VideoMetadata> videos)
     {
         var settings = await _settingsRepository.GetAsync();
-        if (settings is not null && settings.StatisticsMode)
+        if (settings is null) return videos;
+
+        if (settings.RandomSort)
+        {
+            if (!_randomSortWasEnabled || _randomSortSeed is null)
+            {
+                _randomSortSeed = Random.Shared.Next();
+            }
+            _randomSortWasEnabled = true;
+
+            var rng = new Random(_randomSortSeed.Value);
+            return videos.OrderBy(_ => rng.Next()).ToList();
+        }
+
+        _randomSortWasEnabled = false;
+
+        if (settings.StatisticsMode)
         {
             return videos.OrderBy(v => v.LastTimeWatched ?? DateTime.MinValue).ToList();
         }
+
         return videos;
     }
 
