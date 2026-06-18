@@ -7,8 +7,8 @@ public interface IVideoService
     Task<List<VideoDto>> GetAllAsync(string? search = null);
     Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null, string? search = null);
     Task<VideoDto?> GetByIdAsync(string id);
-    Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20);
-    Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20);
+    Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20, string? search = null);
+    Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20, string? search = null);
     Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request);
     Task<bool> SoftDeleteAsync(string id);
     Task<string?> ResolveFilePathAsync(string id);

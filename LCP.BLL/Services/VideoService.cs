@@ -109,13 +109,28 @@ public class VideoService : IVideoService
         return video is null ? null : MapToDto(video);
     }
 
-    public async Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20)
+    public async Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20, string? search = null)
     {
         var videos = await _repository.GetByCollectionIdAsync(collectionId);
         videos = await FilterByTypeAsync(videos);
-        videos = await ApplyOrderingAsync(videos);
-        var totalCount = videos.Count;
-        var items = videos
+
+        List<VideoMetadata> ordered;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            ordered = videos
+                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
+                .Where(x => x.Score >= 0.2)
+                .OrderByDescending(x => x.Score)
+                .Select(x => x.Video)
+                .ToList();
+        }
+        else
+        {
+            ordered = await ApplyOrderingAsync(videos);
+        }
+
+        var totalCount = ordered.Count;
+        var items = ordered
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(MapToDto)
@@ -129,7 +144,7 @@ public class VideoService : IVideoService
         };
     }
 
-    public async Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20)
+    public async Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20, string? search = null)
     {
         var videos = await _repository.GetAllRawAsync();
         var filtered = await FilterByTypeAsync(videos);
@@ -138,6 +153,15 @@ public class VideoService : IVideoService
             .Select(g => (Id: g.Key, Count: g.Count()))
             .OrderBy(c => c.Id)
             .ToList();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var query = search.ToLowerInvariant();
+            collections = collections
+                .Where(c => c.Id.ToLowerInvariant().Contains(query))
+                .ToList();
+        }
+
         var totalCount = collections.Count;
         var items = collections
             .Skip((page - 1) * pageSize)
