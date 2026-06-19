@@ -32,7 +32,6 @@ CollectionId    : string?  (optional grouping, like a series/collection)
 EpisodeNumber   : int      (default -1)
 Type            : VideoType (enum: Anime=0, Film=1)
 Tags            : List<string>
-IsDeleted       : bool     (soft delete flag)
 ThumbnailTimecode : double (default -1; seek position for thumbnail generation)
 Duration        : double   (total seconds, set via ffmpeg on seed/sync)
 LastTimeWatched : DateTime? (tracked via PATCH for StatisticsMode ordering)
@@ -83,8 +82,7 @@ class SiteSettings {
     "collectionId": "Sci-Fi",
     "episodeNumber": -1,
     "type": 1,
-    "tags": ["sci-fi"],
-    "isDeleted": false
+    "tags": ["sci-fi"]
   }
 ]
 ```
@@ -147,7 +145,6 @@ class SiteSettings {
 | GET | `/api/videos/paged?page=1&pageSize=20&tags=sci-fi&tags=thriller` | Paginated list (non-deleted only). Optional `tags` param filters by any matching tag |
 | GET | `/api/videos/{id}` | Get single video (even if deleted) |
 | PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags, ThumbnailTimecode, LastTimeWatched) |
-| DELETE | `/api/videos/{id}` | Soft delete (sets IsDeleted=true, returns 204) |
 | GET | `/api/videos/{id}/similar?page=1&pageSize=20` | Paginated similar videos by tag overlap (see Scoring Algorithm below) |
 | GET | `/api/videos/{id}/stream` | Stream full video file with range processing support (Content-Type mapped by extension) |
 | GET | `/api/videos/{id}/thumbnail?t=30&noCache=false` | Return JPEG thumbnail frame (image/jpeg). `t` seeks to a specific second; omit for stored ThumbnailTimecode |
@@ -167,7 +164,7 @@ class SiteSettings {
 | Service | Order | Description |
 |---|---|---|
 | `LibrarySeedService` | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
-| `LibrarySyncService` | 2nd | Bidirectional sync: soft-deletes (sets `IsDeleted=true`) entries whose file is missing from disk; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+| `LibrarySyncService` | 2nd | Bidirectional sync: removes entries whose file is missing from disk; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
 
 Both run once on startup. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
 
@@ -207,14 +204,13 @@ funny video dog and puppet → clean: "funny video dog and puppet" → prefix ma
 funny video bird         → clean: "funny video bird"   → group "default"
 ```
 
-Deleted videos are included in grouping logic.
+All videos are included in grouping logic.
 
 ## Key Conventions
 
 - **No create endpoint** — JSON file is managed via seed/sync services
 - **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`ConcurrentDictionary<string, byte[]>` keyed by video ID). Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching.
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory keyed by `{id}_{resolution}`. Single-slice previews use direct conversion without temp files.
-- **Soft delete only** — `DELETE` sets `IsDeleted = true`, never removes from file
 - **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
 - **CORS** — configured to allow any origin (for local web player)
@@ -261,7 +257,7 @@ LCP.Domain → (none)
 
 | Interface | Methods |
 |---|---|
-| `IVideoRepository` | `GetAllAsync()`, `GetAllRawAsync()`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `GetPagedAsync(page, pageSize)`, `SoftDeleteAsync(id)`, `SaveAllAsync(videos)` |
+| `IVideoRepository` | `GetAllRawAsync()`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `GetPagedAsync(page, pageSize)`, `SaveAllAsync(videos)` |
 | `ITagRepository` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)` |
 | `ISettingsRepository` | `GetAsync()`, `UpdateAsync(settings)` |
 
@@ -269,7 +265,7 @@ LCP.Domain → (none)
 
 | Interface | Methods |
 |---|---|
-| `IVideoService` | `GetAllAsync()`, `GetPagedAsync(page, pageSize, tags?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `SoftDeleteAsync(id)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
+| `IVideoService` | `GetAllAsync()`, `GetPagedAsync(page, pageSize, tags?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
 | `ITagService` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)`, `ExistsAllAsync(tags)` — validates all tags exist in master list |
 | `ISettingsService` | `GetAsync()`, `UpdateAsync(settings)` |
 | `IThumbnailService` | `GetThumbnailAsync(videoId)` — cached, `GetThumbnailPreviewAsync(videoId, timecode)` — uncached, `InvalidateCache(videoId)` |

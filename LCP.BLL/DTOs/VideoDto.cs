@@ -13,7 +13,6 @@ public class VideoDto
     public int EpisodeNumber { get; set; } = -1;
     public VideoType Type { get; set; } = VideoType.Film;
     public List<string> Tags { get; set; } = [];
-    public bool IsDeleted { get; set; }
     public double ThumbnailTimecode { get; set; } = -1;
     public double Duration { get; set; }
     public DateTime? LastTimeWatched { get; set; }

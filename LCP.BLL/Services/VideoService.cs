@@ -207,15 +207,6 @@ public class VideoService : IVideoService
         return MapToDto(entry);
     }
 
-    public async Task<bool> SoftDeleteAsync(string id)
-    {
-        var video = await _repository.GetByIdAsync(id);
-        if (video is null) return false;
-
-        await _repository.SoftDeleteAsync(id);
-        return true;
-    }
-
     public async Task<string?> ResolveFilePathAsync(string id)
     {
         var video = await _repository.GetByIdAsync(id);
@@ -246,7 +237,7 @@ public class VideoService : IVideoService
         if (tags.Count == 0) return new PagedResult<VideoDto> { Page = page, PageSize = pageSize };
 
         var allVideos = await _repository.GetAllRawAsync();
-        var filtered = allVideos.Where(v => v.Id != id && !v.IsDeleted).ToList();
+        var filtered = allVideos.Where(v => v.Id != id).ToList();
         filtered = await FilterByTypeAsync(filtered);
 
         var scored = ScoreAndInterleave(tags, filtered);
@@ -346,7 +337,6 @@ public class VideoService : IVideoService
         EpisodeNumber = v.EpisodeNumber,
         Type = v.Type,
         Tags = [.. v.Tags],
-        IsDeleted = v.IsDeleted,
         ThumbnailTimecode = v.ThumbnailTimecode,
         Duration = v.Duration,
         LastTimeWatched = v.LastTimeWatched,

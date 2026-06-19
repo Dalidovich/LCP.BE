@@ -10,7 +10,6 @@ public interface IVideoService
     Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20, string? search = null);
     Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20, string? search = null);
     Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request);
-    Task<bool> SoftDeleteAsync(string id);
     Task<string?> ResolveFilePathAsync(string id);
     Task<VideoDto?> RegenerateSlicesAsync(string id);
     Task<PagedResult<VideoDto>> GetSimilarAsync(string id, int page = 1, int pageSize = 20);

@@ -75,14 +75,6 @@ public class VideosController : ControllerBase
         return video;
     }
 
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> SoftDelete(string id)
-    {
-        var deleted = await _videoService.SoftDeleteAsync(id);
-        if (!deleted) return NotFound();
-        return NoContent();
-    }
-
     [HttpPost("{id}/regenerate-slices")]
     public async Task<ActionResult> RegenerateSlices(string id)
     {

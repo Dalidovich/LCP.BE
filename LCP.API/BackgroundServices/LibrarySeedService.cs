@@ -96,7 +96,6 @@ public class LibrarySeedService : IHostedService
                 Id = Guid.NewGuid().ToString(),
                 RelativePath = relativePath,
                 SystemName = Path.GetFileNameWithoutExtension(file),
-                IsDeleted = false,
                 Duration = duration,
                 PreviewSlices = PreviewSlice.CalculateSlices(duration),
                 ThumbnailTimecode = 2 > duration ? duration : 2

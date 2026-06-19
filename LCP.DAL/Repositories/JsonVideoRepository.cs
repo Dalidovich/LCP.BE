@@ -113,25 +113,6 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
-    public async Task SoftDeleteAsync(string id)
-    {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            var video = _cache.FirstOrDefault(v => v.Id == id);
-            if (video is not null)
-            {
-                video.IsDeleted = true;
-                await SaveAsync(_cache);
-            }
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
-
     public async Task SaveAllAsync(List<VideoMetadata> videos)
     {
         await _lock.WaitAsync();

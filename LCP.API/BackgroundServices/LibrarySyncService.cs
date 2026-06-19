@@ -41,15 +41,8 @@ public class LibrarySyncService : IHostedService
             .Select(f => Path.GetRelativePath(rootPath, f))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var entry in allEntries)
-        {
-            var fullPath = Path.Combine(rootPath, entry.RelativePath);
-            if (!File.Exists(fullPath) && !entry.IsDeleted)
-            {
-                entry.IsDeleted = true;
-                changed = true;
-            }
-        }
+        var removedCount = allEntries.RemoveAll(e => !File.Exists(Path.Combine(rootPath, e.RelativePath)));
+        if (removedCount > 0) changed = true;
 
         foreach (var entry in allEntries)
         {
@@ -75,7 +68,6 @@ public class LibrarySyncService : IHostedService
                 Id = Guid.NewGuid().ToString(),
                 RelativePath = relativePath,
                 SystemName = Path.GetFileNameWithoutExtension(relativePath),
-                IsDeleted = false,
                 Duration = duration,
                 PreviewSlices = PreviewSlice.CalculateSlices(duration)
             });
