@@ -51,7 +51,7 @@ public class LibrarySeedService : IHostedService
             }
         }
 
-        var settingsFilePath = _settings.ResolveSystemFilePath(_settings.SettingsFilePath);
+        var settingsFilePath = _settings.ResolveSystemFilePath(LibrarySettings.SettingsFileName);
         if (!File.Exists(settingsFilePath))
         {
             await _settingsRepository.UpdateAsync(new SiteSettings());

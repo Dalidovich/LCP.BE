@@ -18,7 +18,7 @@ public class JsonSettingsRepository : ISettingsRepository
 
     public JsonSettingsRepository(IOptions<LibrarySettings> settings)
     {
-        _filePath = settings.Value.ResolveSystemFilePath(settings.Value.SettingsFilePath);
+        _filePath = settings.Value.ResolveSystemFilePath(LibrarySettings.SettingsFileName);
         if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);

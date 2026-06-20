@@ -97,9 +97,6 @@ public class Program
     {
         var ls = new Dictionary<string, object?>
         {
-            ["JsonFilePath"] = config["LibrarySettings:JsonFilePath"] ?? "library.json",
-            ["TagsFilePath"] = config["LibrarySettings:TagsFilePath"] ?? "tags.json",
-            ["SettingsFilePath"] = config["LibrarySettings:SettingsFilePath"] ?? "settings.json",
             ["LibraryRootPath"] = config["LibrarySettings:LibraryRootPath"] ?? "",
             ["Password"] = config["LibrarySettings:Password"] ?? "",
             ["SmartVideoGrouping"] = bool.TryParse(config["LibrarySettings:SmartVideoGrouping"], out var sg) && sg

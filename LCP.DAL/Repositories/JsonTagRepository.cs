@@ -17,7 +17,7 @@ public class JsonTagRepository : ITagRepository
 
     public JsonTagRepository(IOptions<LibrarySettings> settings)
     {
-        _filePath = settings.Value.ResolveSystemFilePath(settings.Value.TagsFilePath);
+        _filePath = settings.Value.ResolveSystemFilePath(LibrarySettings.TagsFileName);
         if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);

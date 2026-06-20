@@ -18,7 +18,7 @@ public class JsonVideoRepository : IVideoRepository
 
     public JsonVideoRepository(IOptions<LibrarySettings> settings)
     {
-        _filePath = settings.Value.ResolveSystemFilePath(settings.Value.JsonFilePath);
+        _filePath = settings.Value.ResolveSystemFilePath(LibrarySettings.JsonFileName);
         if (string.IsNullOrEmpty(_filePath)) return;
 
         var dir = Path.GetDirectoryName(_filePath);

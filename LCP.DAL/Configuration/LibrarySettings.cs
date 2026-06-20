@@ -4,9 +4,10 @@ public class LibrarySettings
 {
     public const string SectionName = "LibrarySettings";
 
-    public string JsonFilePath { get; set; } = "library.json";
-    public string TagsFilePath { get; set; } = "tags.json";
-    public string SettingsFilePath { get; set; } = "settings.json";
+    public const string JsonFileName = "library.json";
+    public const string TagsFileName = "tags.json";
+    public const string SettingsFileName = "settings.json";
+
     public string LibraryRootPath { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public bool SmartVideoGrouping { get; set; }

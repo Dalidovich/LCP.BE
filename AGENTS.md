@@ -109,9 +109,6 @@ class SiteSettings {
 ```json
 {
   "LibrarySettings": {
-    "JsonFilePath": "library.json",
-    "TagsFilePath": "tags.json",
-    "SettingsFilePath": "settings.json",
     "LibraryRootPath": "D:\\Media",
     "Password": "",
     "SmartVideoGrouping": false
@@ -119,7 +116,7 @@ class SiteSettings {
 }
 ```
 
-- `JsonFilePath` / `TagsFilePath` / `SettingsFilePath` — if relative, resolved via `LibrarySettings.ResolveSystemFilePath()` under `{LibraryRootPath}\SYSTEMFILES\`; if absolute, used as-is
+- System file names (`library.json`, `tags.json`, `settings.json`) are hardcoded constants in `LibrarySettings.cs` — resolved under `{LibraryRootPath}\SYSTEMFILES\` via `ResolveSystemFilePath()`
 - `LibraryRootPath` — root directory for video files. Full paths resolved as `LibraryRootPath + video.RelativePath`.
 - `Password` — optional password for frontend auth check via `POST /api/settings/check-password` (plain-text comparison)
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)

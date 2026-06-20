@@ -1,8 +1,5 @@
 {
   "LibrarySettings": {
-    "JsonFilePath": "library.json",
-    "TagsFilePath": "tags.json",
-    "SettingsFilePath": "settings.json",
     "LibraryRootPath": "",
     "Password": "",
     "SmartVideoGrouping": true,
