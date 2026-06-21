@@ -228,6 +228,45 @@ public class VideoService : IVideoService
         return MapToDto(entry);
     }
 
+    public async Task<VideoDto?> AddVideoFileAsync(string fileName, Stream content)
+    {
+        var ext = Path.GetExtension(fileName);
+        var rawName = Path.GetFileNameWithoutExtension(fileName);
+        var name = rawName;
+        var counter = 1;
+        while (File.Exists(Path.Combine(_libraryRootPath, $"{name}{ext}")))
+            name = $"{rawName} ({counter++})";
+
+        var relativePath = $"{name}{ext}";
+        var fullPath = Path.Combine(_libraryRootPath, relativePath);
+
+        var dir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        await using (var fs = new FileStream(fullPath, FileMode.CreateNew))
+        {
+            await content.CopyToAsync(fs);
+        }
+
+        var duration = FFProbeHelper.ProbeDuration(fullPath);
+
+        var entry = new VideoMetadata
+        {
+            Id = Guid.NewGuid().ToString(),
+            RelativePath = relativePath,
+            SystemName = rawName,
+            Duration = duration,
+            PreviewSlices = PreviewSlice.CalculateSlices(duration)
+        };
+
+        var allEntries = await _repository.GetAllRawAsync();
+        allEntries.Add(entry);
+        await _repository.SaveAllAsync(allEntries);
+
+        return MapToDto(entry);
+    }
+
     public async Task<PagedResult<VideoDto>> GetSimilarAsync(string id, int page = 1, int pageSize = 20)
     {
         var source = await _repository.GetByIdAsync(id);

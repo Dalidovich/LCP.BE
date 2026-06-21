@@ -5,16 +5,20 @@ using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Options;
 
-namespace LCP.API.BackgroundServices;
+namespace LCP.BLL.Services;
 
-public class LibrarySyncService : IHostedService
+public class LibrarySyncService : ILibrarySyncService
 {
     private readonly IVideoRepository _repository;
     private readonly ITagRepository _tagRepository;
     private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
-    public LibrarySyncService(IVideoRepository repository, ITagRepository tagRepository, ISmartGroupingService smartGroupingService, IOptions<LibrarySettings> settings)
+    public LibrarySyncService(
+        IVideoRepository repository,
+        ITagRepository tagRepository,
+        ISmartGroupingService smartGroupingService,
+        IOptions<LibrarySettings> settings)
     {
         _repository = repository;
         _tagRepository = tagRepository;
@@ -22,7 +26,7 @@ public class LibrarySyncService : IHostedService
         _settings = settings.Value;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task SyncAsync()
     {
         var rootPath = _settings.LibraryRootPath;
         if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath)) return;
@@ -97,6 +101,4 @@ public class LibrarySyncService : IHostedService
             await _smartGroupingService.GroupVideosAsync();
         }
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

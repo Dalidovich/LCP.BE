@@ -56,6 +56,20 @@ public class VideosController : ControllerBase
         return result;
     }
 
+    [HttpPost("new")]
+    [DisableRequestSizeLimit]
+    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
+    public async Task<ActionResult<VideoDto>> Add(IFormFile file)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest("No file provided");
+
+        await using var stream = file.OpenReadStream();
+        var video = await _videoService.AddVideoFileAsync(file.FileName, stream);
+        if (video is null) return BadRequest("Failed to add video");
+        return CreatedAtAction(nameof(GetById), new { id = video.Id }, video);
+    }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<VideoDto>> GetById(string id)
     {

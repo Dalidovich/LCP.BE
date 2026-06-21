@@ -51,9 +51,10 @@ public class Program
             builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
             builder.Services.AddSingleton<IPreviewService, PreviewService>();
             builder.Services.AddSingleton<ISmartGroupingService, SmartGroupingService>();
+            builder.Services.AddSingleton<ILibrarySyncService, LibrarySyncService>();
 
             builder.Services.AddHostedService<LibrarySeedService>();
-            builder.Services.AddHostedService<LibrarySyncService>();
+            builder.Services.AddHostedService<LibrarySyncBackgroundService>();
 
             builder.Services.AddCors(options =>
             {
