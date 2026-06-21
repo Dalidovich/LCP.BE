@@ -12,6 +12,7 @@ public class VideoService : IVideoService
 {
     private readonly IVideoRepository _repository;
     private readonly ITagRepository _tagRepository;
+    private readonly ITagService _tagService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
@@ -22,6 +23,7 @@ public class VideoService : IVideoService
     public VideoService(
         IVideoRepository repository,
         ITagRepository tagRepository,
+        ITagService tagService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
         ISettingsRepository settingsRepository,
@@ -29,6 +31,7 @@ public class VideoService : IVideoService
     {
         _repository = repository;
         _tagRepository = tagRepository;
+        _tagService = tagService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
         _settingsRepository = settingsRepository;
@@ -194,7 +197,10 @@ public class VideoService : IVideoService
         if (request.Type is not null)
             entry.Type = request.Type.Value;
         if (request.Tags is not null)
+        {
             entry.Tags = request.Tags;
+            _tagService.InvalidateInfoCache();
+        }
         if (request.ThumbnailTimecode is not null)
         {
             entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;

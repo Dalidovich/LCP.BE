@@ -1,3 +1,4 @@
+using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,6 +19,12 @@ public class TagsController : ControllerBase
     public async Task<ActionResult<List<string>>> GetAll()
     {
         return await _tagService.GetAllAsync();
+    }
+
+    [HttpGet("info")]
+    public async Task<ActionResult<List<TagInfo>>> GetInfo()
+    {
+        return await _tagService.GetInfoAsync();
     }
 
     [HttpPost]

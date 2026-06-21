@@ -1,3 +1,4 @@
+using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Interfaces;
 
@@ -7,6 +8,7 @@ public class TagService : ITagService
 {
     private readonly ITagRepository _repository;
     private readonly IVideoRepository _videoRepository;
+    private static List<TagInfo>? _cachedInfo;
 
     public TagService(ITagRepository repository, IVideoRepository videoRepository)
     {
@@ -19,9 +21,37 @@ public class TagService : ITagService
         return await _repository.GetAllAsync();
     }
 
+    public async Task<List<TagInfo>> GetInfoAsync()
+    {
+        if (_cachedInfo is not null)
+            return _cachedInfo;
+
+        var allVideos = await _videoRepository.GetAllRawAsync();
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var video in allVideos)
+        {
+            foreach (var tag in video.Tags)
+            {
+                counts.TryGetValue(tag, out var c);
+                counts[tag] = c + 1;
+            }
+        }
+        _cachedInfo = counts
+            .Select(kvp => new TagInfo { Tag = kvp.Key, UsageCount = kvp.Value })
+            .OrderBy(t => t.Tag)
+            .ToList();
+        return _cachedInfo;
+    }
+
+    public void InvalidateInfoCache()
+    {
+        _cachedInfo = null;
+    }
+
     public async Task AddAsync(string tag)
     {
         await _repository.AddAsync(tag);
+        _cachedInfo = null;
     }
 
     public async Task<bool> ExistsAllAsync(List<string> tags)
@@ -46,7 +76,10 @@ public class TagService : ITagService
             if (removed > 0) changed = true;
         }
         if (changed)
+        {
             await _videoRepository.SaveAllAsync(allVideos);
+            _cachedInfo = null;
+        }
 
         return true;
     }
