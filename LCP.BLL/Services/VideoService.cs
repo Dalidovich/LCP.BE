@@ -273,6 +273,15 @@ public class VideoService : IVideoService
         return MapToDto(entry);
     }
 
+    public async Task<VideoDto?> GetRandomAsync()
+    {
+        var videos = await _repository.GetAllRawAsync();
+        var filtered = await FilterByTypeAsync(videos);
+        if (filtered.Count == 0) return null;
+        var idx = Random.Shared.Next(filtered.Count);
+        return MapToDto(filtered[idx]);
+    }
+
     public async Task<PagedResult<VideoDto>> GetSimilarAsync(string id, int page = 1, int pageSize = 20)
     {
         var source = await _repository.GetByIdAsync(id);

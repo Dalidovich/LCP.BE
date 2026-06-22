@@ -14,4 +14,5 @@ public interface IVideoService
     Task<VideoDto?> RegenerateSlicesAsync(string id);
     Task<PagedResult<VideoDto>> GetSimilarAsync(string id, int page = 1, int pageSize = 20);
     Task<VideoDto?> AddVideoFileAsync(string fileName, Stream content);
+    Task<VideoDto?> GetRandomAsync();
 }

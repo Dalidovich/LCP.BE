@@ -56,6 +56,14 @@ public class VideosController : ControllerBase
         return result;
     }
 
+    [HttpGet("random")]
+    public async Task<ActionResult<VideoDto>> GetRandom()
+    {
+        var video = await _videoService.GetRandomAsync();
+        if (video is null) return NotFound();
+        return video;
+    }
+
     [HttpPost("new")]
     [DisableRequestSizeLimit]
     [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
