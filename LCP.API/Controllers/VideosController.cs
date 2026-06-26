@@ -15,19 +15,22 @@ public class VideosController : ControllerBase
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
     private readonly ITagService _tagService;
+    private readonly IProductionInfoService _productionInfoService;
 
     public VideosController(
         IVideoService videoService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
         ISettingsRepository settingsRepository,
-        ITagService tagService)
+        ITagService tagService,
+        IProductionInfoService productionInfoService)
     {
         _videoService = videoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
         _settingsRepository = settingsRepository;
         _tagService = tagService;
+        _productionInfoService = productionInfoService;
     }
 
     [HttpGet]
@@ -43,6 +46,7 @@ public class VideosController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] List<string>? tags = null,
+        [FromQuery] List<string>? productionInfo = null,
         [FromQuery] string? search = null)
     {
         if (page < 1) page = 1;
@@ -51,7 +55,10 @@ public class VideosController : ControllerBase
         if (tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(tags))
             return BadRequest();
 
-        var result = await _videoService.GetPagedAsync(page, pageSize, tags, search);
+        if (productionInfo is { Count: > 0 } && !await _productionInfoService.ExistsAllAsync(productionInfo))
+            return BadRequest();
+
+        var result = await _videoService.GetPagedAsync(page, pageSize, tags, productionInfo, search);
         _ = WarmCacheAsync(result.Items);
         return result;
     }
@@ -91,6 +98,9 @@ public class VideosController : ControllerBase
     {
         if (request.Tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(request.Tags))
             return BadRequest("One or more tags do not exist in the master list.");
+
+        if (request.ProductionInfo is { Count: > 0 } && !await _productionInfoService.ExistsAllAsync(request.ProductionInfo))
+            return BadRequest("One or more studios do not exist in the master list.");
 
         var video = await _videoService.UpdateAsync(id, request);
         if (video is null) return NotFound();

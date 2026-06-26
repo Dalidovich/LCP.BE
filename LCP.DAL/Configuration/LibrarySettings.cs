@@ -6,6 +6,7 @@ public class LibrarySettings
 
     public const string JsonFileName = "library.json";
     public const string TagsFileName = "tags.json";
+    public const string ProductionInfoFileName = "productionInfo.json";
     public const string SettingsFileName = "settings.json";
 
     public string LibraryRootPath { get; set; } = string.Empty;

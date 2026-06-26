@@ -11,17 +11,20 @@ public class LibrarySyncService : ILibrarySyncService
 {
     private readonly IVideoRepository _repository;
     private readonly ITagRepository _tagRepository;
+    private readonly IProductionInfoRepository _productionInfoRepository;
     private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
     public LibrarySyncService(
         IVideoRepository repository,
         ITagRepository tagRepository,
+        IProductionInfoRepository productionInfoRepository,
         ISmartGroupingService smartGroupingService,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
         _tagRepository = tagRepository;
+        _productionInfoRepository = productionInfoRepository;
         _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
     }
@@ -30,6 +33,13 @@ public class LibrarySyncService : ILibrarySyncService
     {
         var rootPath = _settings.LibraryRootPath;
         if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath)) return;
+
+        var sourcePath = _settings.ResolveSystemFilePath(LibrarySettings.JsonFileName);
+        if (!string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath))
+        {
+            var backupPath = Path.Combine(Path.GetDirectoryName(sourcePath)!, "library.backup.json");
+            File.Copy(sourcePath, backupPath, overwrite: true);
+        }
 
         var videoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -92,6 +102,19 @@ public class LibrarySyncService : ILibrarySyncService
             if (removed > 0) tagChanged = true;
         }
         if (tagChanged)
+        {
+            await _repository.SaveAllAsync(allEntries);
+        }
+
+        var masterStudios = await _productionInfoRepository.GetAllAsync();
+        var masterStudioSet = masterStudios.Select(t => t.ToLowerInvariant()).ToHashSet();
+        var studioChanged = false;
+        foreach (var entry in allEntries)
+        {
+            var removed = entry.ProductionInfo.RemoveAll(t => !masterStudioSet.Contains(t.ToLowerInvariant()));
+            if (removed > 0) studioChanged = true;
+        }
+        if (studioChanged)
         {
             await _repository.SaveAllAsync(allEntries);
         }

@@ -7,15 +7,15 @@ using Microsoft.AspNetCore.Mvc;
 namespace LCP.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
-public class TagsController : ControllerBase
+[Route("api/production-info")]
+public class ProductionInfoController : ControllerBase
 {
-    private readonly ITagService _tagService;
+    private readonly IProductionInfoService _productionInfoService;
     private readonly ISettingsRepository _settingsRepository;
 
-    public TagsController(ITagService tagService, ISettingsRepository settingsRepository)
+    public ProductionInfoController(IProductionInfoService productionInfoService, ISettingsRepository settingsRepository)
     {
-        _tagService = tagService;
+        _productionInfoService = productionInfoService;
         _settingsRepository = settingsRepository;
     }
 
@@ -29,11 +29,11 @@ public class TagsController : ControllerBase
             if (settings?.VideoTypeFilter is { Count: > 0 })
                 typeFilter = settings.VideoTypeFilter;
         }
-        return await _tagService.GetAllAsync(typeFilter);
+        return await _productionInfoService.GetAllAsync(typeFilter);
     }
 
     [HttpGet("info")]
-    public async Task<ActionResult<List<TagInfo>>> GetInfo([FromQuery] bool filterByType = false)
+    public async Task<ActionResult<List<ProductionInfoDto>>> GetInfo([FromQuery] bool filterByType = false)
     {
         List<VideoType>? typeFilter = null;
         if (filterByType)
@@ -42,21 +42,21 @@ public class TagsController : ControllerBase
             if (settings?.VideoTypeFilter is { Count: > 0 })
                 typeFilter = settings.VideoTypeFilter;
         }
-        return await _tagService.GetInfoAsync(typeFilter);
+        return await _productionInfoService.GetInfoAsync(typeFilter);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Add([FromBody] string tag)
+    public async Task<IActionResult> Add([FromBody] string studio)
     {
-        if (string.IsNullOrWhiteSpace(tag)) return BadRequest();
-        await _tagService.AddAsync(tag);
+        if (string.IsNullOrWhiteSpace(studio)) return BadRequest();
+        await _productionInfoService.AddAsync(studio);
         return NoContent();
     }
 
-    [HttpDelete("{tag}")]
-    public async Task<IActionResult> Remove(string tag)
+    [HttpDelete("{studio}")]
+    public async Task<IActionResult> Remove(string studio)
     {
-        var removed = await _tagService.RemoveAsync(tag);
+        var removed = await _productionInfoService.RemoveAsync(studio);
         if (!removed) return NotFound();
         return NoContent();
     }

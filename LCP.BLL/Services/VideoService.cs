@@ -13,6 +13,7 @@ public class VideoService : IVideoService
     private readonly IVideoRepository _repository;
     private readonly ITagRepository _tagRepository;
     private readonly ITagService _tagService;
+    private readonly IProductionInfoService _productionInfoService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
     private readonly ISettingsRepository _settingsRepository;
@@ -24,6 +25,7 @@ public class VideoService : IVideoService
         IVideoRepository repository,
         ITagRepository tagRepository,
         ITagService tagService,
+        IProductionInfoService productionInfoService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
         ISettingsRepository settingsRepository,
@@ -32,6 +34,7 @@ public class VideoService : IVideoService
         _repository = repository;
         _tagRepository = tagRepository;
         _tagService = tagService;
+        _productionInfoService = productionInfoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
         _settingsRepository = settingsRepository;
@@ -61,7 +64,7 @@ public class VideoService : IVideoService
         return ordered.Select(MapToDto).ToList();
     }
 
-    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null, string? search = null)
+    public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null, List<string>? productionInfo = null, string? search = null)
     {
         var videos = await _repository.GetAllRawAsync();
         List<VideoMetadata> ordered;
@@ -88,6 +91,15 @@ public class VideoService : IVideoService
             ordered = ordered
                 .Where(v => v.Tags.Any(t => tagSet.Contains(t.ToLowerInvariant())))
                 .OrderByDescending(v => v.Tags.Count(t => tagSet.Contains(t.ToLowerInvariant())))
+                .ToList();
+        }
+
+        if (productionInfo is { Count: > 0 })
+        {
+            var piSet = productionInfo.Select(p => p.ToLowerInvariant()).ToHashSet();
+            ordered = ordered
+                .Where(v => v.ProductionInfo.Any(p => piSet.Contains(p.ToLowerInvariant())))
+                .OrderByDescending(v => v.ProductionInfo.Count(p => piSet.Contains(p.ToLowerInvariant())))
                 .ToList();
         }
 
@@ -200,6 +212,11 @@ public class VideoService : IVideoService
         {
             entry.Tags = request.Tags;
             _tagService.InvalidateInfoCache();
+        }
+        if (request.ProductionInfo is not null)
+        {
+            entry.ProductionInfo = request.ProductionInfo;
+            _productionInfoService.InvalidateInfoCache();
         }
         if (request.ThumbnailTimecode is not null)
         {
@@ -391,6 +408,7 @@ public class VideoService : IVideoService
         EpisodeNumber = v.EpisodeNumber,
         Type = v.Type,
         Tags = [.. v.Tags],
+        ProductionInfo = [.. v.ProductionInfo],
         ThumbnailTimecode = v.ThumbnailTimecode,
         Duration = v.Duration,
         LastTimeWatched = v.LastTimeWatched,

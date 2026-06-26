@@ -11,6 +11,7 @@ public class LibrarySeedService : IHostedService
 {
     private readonly IVideoRepository _videoRepository;
     private readonly ITagRepository _tagRepository;
+    private readonly IProductionInfoRepository _productionInfoRepository;
     private readonly ISettingsRepository _settingsRepository;
     private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
@@ -18,12 +19,14 @@ public class LibrarySeedService : IHostedService
     public LibrarySeedService(
         IVideoRepository videoRepository,
         ITagRepository tagRepository,
+        IProductionInfoRepository productionInfoRepository,
         ISettingsRepository settingsRepository,
         ISmartGroupingService smartGroupingService,
         IOptions<LibrarySettings> settings)
     {
         _videoRepository = videoRepository;
         _tagRepository = tagRepository;
+        _productionInfoRepository = productionInfoRepository;
         _settingsRepository = settingsRepository;
         _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
@@ -48,6 +51,12 @@ public class LibrarySeedService : IHostedService
             if (tags.Count == 0)
             {
                 await SeedTagsAsync();
+            }
+
+            var studios = await _productionInfoRepository.GetAllAsync();
+            if (studios.Count == 0)
+            {
+                await SeedProductionInfoAsync();
             }
         }
 
@@ -122,6 +131,23 @@ public class LibrarySeedService : IHostedService
         foreach (var tag in tags)
         {
             await _tagRepository.AddAsync(tag);
+        }
+    }
+
+    private async Task SeedProductionInfoAsync()
+    {
+        var allEntries = await _videoRepository.GetAllRawAsync();
+        var studios = allEntries
+            .SelectMany(v => v.ProductionInfo)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t)
+            .ToList();
+
+        foreach (var studio in studios)
+        {
+            await _productionInfoRepository.AddAsync(studio);
         }
     }
 

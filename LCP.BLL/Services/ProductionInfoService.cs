@@ -5,13 +5,13 @@ using LCP.Domain.Entities;
 
 namespace LCP.BLL.Services;
 
-public class TagService : ITagService
+public class ProductionInfoService : IProductionInfoService
 {
-    private readonly ITagRepository _repository;
+    private readonly IProductionInfoRepository _repository;
     private readonly IVideoRepository _videoRepository;
-    private static List<TagInfo>? _cachedInfo;
+    private static List<ProductionInfoDto>? _cachedInfo;
 
-    public TagService(ITagRepository repository, IVideoRepository videoRepository)
+    public ProductionInfoService(IProductionInfoRepository repository, IVideoRepository videoRepository)
     {
         _repository = repository;
         _videoRepository = videoRepository;
@@ -24,19 +24,19 @@ public class TagService : ITagService
 
         var filterSet = videoTypeFilter.ToHashSet();
         var allVideos = await _videoRepository.GetAllRawAsync();
-        var matchingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matchingStudios = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var video in allVideos)
         {
             if (filterSet.Contains(video.Type))
             {
-                foreach (var tag in video.Tags)
-                    matchingTags.Add(tag);
+                foreach (var studio in video.ProductionInfo)
+                    matchingStudios.Add(studio);
             }
         }
-        return [.. matchingTags.OrderBy(t => t)];
+        return [.. matchingStudios.OrderBy(s => s)];
     }
 
-    public async Task<List<TagInfo>> GetInfoAsync(List<VideoType>? videoTypeFilter = null)
+    public async Task<List<ProductionInfoDto>> GetInfoAsync(List<VideoType>? videoTypeFilter = null)
     {
         if (videoTypeFilter is not { Count: > 0 })
         {
@@ -52,15 +52,15 @@ public class TagService : ITagService
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var video in filtered)
         {
-            foreach (var tag in video.Tags)
+            foreach (var studio in video.ProductionInfo)
             {
-                counts.TryGetValue(tag, out var c);
-                counts[tag] = c + 1;
+                counts.TryGetValue(studio, out var c);
+                counts[studio] = c + 1;
             }
         }
         var result = counts
-            .Select(kvp => new TagInfo { Tag = kvp.Key, UsageCount = kvp.Value })
-            .OrderBy(t => t.Tag)
+            .Select(kvp => new ProductionInfoDto { Name = kvp.Key, UsageCount = kvp.Value })
+            .OrderBy(t => t.Name)
             .ToList();
 
         if (videoTypeFilter is not { Count: > 0 })
@@ -74,31 +74,31 @@ public class TagService : ITagService
         _cachedInfo = null;
     }
 
-    public async Task AddAsync(string tag)
+    public async Task AddAsync(string studio)
     {
-        await _repository.AddAsync(tag);
+        await _repository.AddAsync(studio);
         _cachedInfo = null;
     }
 
-    public async Task<bool> ExistsAllAsync(List<string> tags)
+    public async Task<bool> ExistsAllAsync(List<string> studios)
     {
-        var masterTags = await _repository.GetAllAsync();
-        var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
-        return tags.All(t => masterSet.Contains(t.ToLowerInvariant()));
+        var masterStudios = await _repository.GetAllAsync();
+        var masterSet = masterStudios.Select(t => t.ToLowerInvariant()).ToHashSet();
+        return studios.All(t => masterSet.Contains(t.ToLowerInvariant()));
     }
 
-    public async Task<bool> RemoveAsync(string tag)
+    public async Task<bool> RemoveAsync(string studio)
     {
-        var tags = await _repository.GetAllAsync();
-        if (!tags.Contains(tag, StringComparer.OrdinalIgnoreCase)) return false;
+        var studios = await _repository.GetAllAsync();
+        if (!studios.Contains(studio, StringComparer.OrdinalIgnoreCase)) return false;
 
-        await _repository.RemoveAsync(tag);
+        await _repository.RemoveAsync(studio);
 
         var allVideos = await _videoRepository.GetAllRawAsync();
         var changed = false;
         foreach (var video in allVideos)
         {
-            var removed = video.Tags.RemoveAll(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+            var removed = video.ProductionInfo.RemoveAll(t => t.Equals(studio, StringComparison.OrdinalIgnoreCase));
             if (removed > 0) changed = true;
         }
         if (changed)
