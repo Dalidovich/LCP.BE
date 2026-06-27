@@ -11,11 +11,46 @@ public class Program
         var (cfg, backendPath, frontendPath) = await LoadConfigAsync();
         var backendDir = ResolveDir(backendPath, "LCP.API", "BackendPath");
         var frontendDir = ResolveDir(frontendPath, null, "FrontendPath");
-
         var sharedConfigPath = Path.Combine(backendPath, "appsettings.json");
         await WriteSharedConfigAsync(cfg, sharedConfigPath);
 
-        var backend = StartProcess(new ProcessStartInfo
+        var killed = false;
+        var exitTcs = new TaskCompletionSource();
+
+        Console.CancelKeyPress += (_, args) =>
+        {
+            args.Cancel = true;
+            killed = true;
+            exitTcs.TrySetResult();
+        };
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            if (!killed) killed = true;
+        };
+
+        while (!killed)
+        {
+            var backend = StartBackend(backendDir, sharedConfigPath);
+            var frontend = StartFrontend(frontendDir);
+
+            Console.WriteLine($"Backend PID: {backend.Id}   Frontend PID: {frontend.Id}");
+            Console.WriteLine("Press Ctrl+C to stop all processes.");
+
+            var completed = await Task.WhenAny(exitTcs.Task, WaitForExitAsync(backend), WaitForExitAsync(frontend));
+
+            if (killed) break;
+
+            Console.WriteLine("A process exited unexpectedly. Stopping all and restarting...");
+            KillAll(backend, frontend);
+            await Task.Delay(3000);
+        }
+    }
+
+    private static Process StartBackend(string backendDir, string sharedConfigPath)
+    {
+        Console.WriteLine("Starting backend...");
+        return StartProcess(new ProcessStartInfo
         {
             FileName = "dotnet",
             Arguments = $"run --configuration Release --project \"{backendDir}\"",
@@ -24,39 +59,17 @@ public class Program
                 ["SHARED_CONFIG_PATH"] = sharedConfigPath
             }
         }, $"dotnet run --configuration Release --project \"{backendDir}\"");
+    }
 
-        var frontend = StartProcess(new ProcessStartInfo
+    private static Process StartFrontend(string frontendDir)
+    {
+        Console.WriteLine("Starting frontend...");
+        return StartProcess(new ProcessStartInfo
         {
             FileName = "cmd",
             Arguments = "/c npm start",
             WorkingDirectory = frontendDir
         }, $"npm start in \"{frontendDir}\"");
-
-        Console.WriteLine($"Backend PID: {backend.Id}   Frontend PID: {frontend.Id}");
-        Console.WriteLine("Press Ctrl+C to stop all processes.");
-
-        var killed = false;
-        var exitTcs = new TaskCompletionSource();
-
-        Console.CancelKeyPress += (_, args) =>
-        {
-            args.Cancel = true;
-            KillAll(backend, frontend, ref killed);
-            exitTcs.TrySetResult();
-        };
-
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-        {
-            if (!killed) KillAll(backend, frontend, ref killed);
-        };
-
-        var completed = await Task.WhenAny(exitTcs.Task, WaitForExitAsync(backend), WaitForExitAsync(frontend));
-
-        if (completed != exitTcs.Task)
-        {
-            Console.WriteLine("A process exited unexpectedly. Stopping...");
-            KillAll(backend, frontend, ref killed);
-        }
     }
 
     private static async Task<(IConfigurationRoot Config, string BackendPath, string FrontendPath)> LoadConfigAsync()
@@ -140,9 +153,8 @@ public class Program
         catch { }
     }
 
-    private static void KillAll(Process a, Process b, ref bool killed)
+    private static void KillAll(Process a, Process b)
     {
-        killed = true;
         try { a.Kill(true); } catch { }
         try { b.Kill(true); } catch { }
     }
