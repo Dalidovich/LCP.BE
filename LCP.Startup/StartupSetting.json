@@ -6,5 +6,6 @@
     "WatchTimeThreshold": 30
   },
   "BackendPath": "",
-  "FrontendPath": ""
+  "FrontendPath": "",
+  "FrontendPort": 4200
 }
