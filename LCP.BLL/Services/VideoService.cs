@@ -309,6 +309,8 @@ public class VideoService : IVideoService
 
         var allVideos = await _repository.GetAllRawAsync();
         var filtered = allVideos.Where(v => v.Id != id).ToList();
+        if (!string.IsNullOrEmpty(source.CollectionId))
+            filtered = filtered.Where(v => v.CollectionId != source.CollectionId).ToList();
         filtered = await FilterByTypeAsync(filtered);
 
         var scored = ScoreAndInterleave(tags, filtered);
