@@ -68,7 +68,7 @@ public class Program
         return StartProcess(new ProcessStartInfo
         {
             FileName = "cmd",
-            Arguments = $"/c ng serve --host 0.0.0.0 --port {port} --proxy-config proxy.conf.json",
+            Arguments = $"/c npx ng serve --host 0.0.0.0 --port {port} --proxy-config proxy.conf.json --disable-host-check",
             WorkingDirectory = frontendDir
         }, $"ng serve --port {port} in \"{frontendDir}\"");
     }
