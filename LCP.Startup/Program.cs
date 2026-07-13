@@ -8,7 +8,7 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
-        var (cfg, backendPath, frontendPath, frontendPort) = await LoadConfigAsync();
+        var (cfg, backendPath, frontendPath) = await LoadConfigAsync();
         var backendDir = ResolveDir(backendPath, "LCP.API", "BackendPath");
         var frontendDir = ResolveDir(frontendPath, null, "FrontendPath");
         var sharedConfigPath = Path.Combine(backendPath, "appsettings.json");
@@ -32,10 +32,9 @@ public class Program
         while (!killed)
         {
             var backend = StartBackend(backendDir, sharedConfigPath);
-            var frontend = StartFrontend(frontendDir, frontendPort);
+            var frontend = StartFrontend(frontendDir);
 
             Console.WriteLine($"Backend PID: {backend.Id}   Frontend PID: {frontend.Id}");
-            Console.WriteLine($"Frontend URL: http://localhost:{frontendPort}");
             Console.WriteLine("Press Ctrl+C to stop all processes.");
 
             var completed = await Task.WhenAny(exitTcs.Task, WaitForExitAsync(backend), WaitForExitAsync(frontend));
@@ -62,24 +61,24 @@ public class Program
         }, $"dotnet run --configuration Release --project \"{backendDir}\"");
     }
 
-    private static Process StartFrontend(string frontendDir, int port)
+    private static Process StartFrontend(string frontendDir)
     {
         Console.WriteLine("Starting frontend...");
         return StartProcess(new ProcessStartInfo
         {
             FileName = "cmd",
-            Arguments = $"/c npx ng serve --host 0.0.0.0 --port {port} --proxy-config proxy.conf.json",
+            Arguments = "/c npm start",
             WorkingDirectory = frontendDir
-        }, $"ng serve --port {port} in \"{frontendDir}\"");
+        }, $"npm start in \"{frontendDir}\"");
     }
 
-    private static async Task<(IConfigurationRoot Config, string BackendPath, string FrontendPath, int FrontendPort)> LoadConfigAsync()
+    private static async Task<(IConfigurationRoot Config, string BackendPath, string FrontendPath)> LoadConfigAsync()
     {
         var configPath = Path.Combine(AppContext.BaseDirectory, "StartupSetting.json");
 
         if (!File.Exists(configPath))
         {
-            var defaultConfig = new { BackendPath = "", FrontendPath = "", FrontendPort = 4200 };
+            var defaultConfig = new { BackendPath = "", FrontendPath = "" };
             var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(configPath, json);
             Console.Error.WriteLine($"StartupSetting.json created at:\n{configPath}\nEdit it with your paths and restart.");
@@ -104,9 +103,7 @@ public class Program
         if (string.IsNullOrWhiteSpace(backendPath) || string.IsNullOrWhiteSpace(frontendPath))
             Fail("BackendPath or FrontendPath is empty in StartupSetting.json or user secrets.");
 
-        var frontendPort = int.TryParse(config["FrontendPort"], out var p) ? p : 4200;
-
-        return (config, backendPath, frontendPath, frontendPort);
+        return (config, backendPath, frontendPath);
     }
 
     private static async Task WriteSharedConfigAsync(IConfigurationRoot config, string path)
