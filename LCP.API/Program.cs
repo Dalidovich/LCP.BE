@@ -17,8 +17,7 @@ public class Program
 
         var configBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false)
-            .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
+            .AddJsonFile("appsettings.json", optional: false);
 
         if (!string.IsNullOrEmpty(sharedConfigPath))
             configBuilder.AddJsonFile(sharedConfigPath, optional: true);
