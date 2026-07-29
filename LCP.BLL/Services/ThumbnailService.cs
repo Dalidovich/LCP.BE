@@ -5,13 +5,13 @@ using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NReco.VideoConverter;
 
 namespace LCP.BLL.Services;
 
 public class ThumbnailService : IThumbnailService
 {
     private readonly IVideoRepository _repository;
+    private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
     private readonly ILogger<ThumbnailService> _logger;
     private static readonly ConcurrentDictionary<string, byte[]> Cache = new();
@@ -19,10 +19,12 @@ public class ThumbnailService : IThumbnailService
 
     public ThumbnailService(
         IVideoRepository repository,
+        IVideoProcessingService videoProcessing,
         IOptions<LibrarySettings> settings,
         ILogger<ThumbnailService> logger)
     {
         _repository = repository;
+        _videoProcessing = videoProcessing;
         _libraryRootPath = settings.Value.LibraryRootPath;
         _logger = logger;
     }
@@ -75,27 +77,8 @@ public class ThumbnailService : IThumbnailService
         }
     }
 
-    private byte[]? ExtractFrame(string videoPath, double thumbnailTimecode)
+    private byte[]? ExtractFrame(string videoPath, double timecode)
     {
-        try
-        {
-            var ffmpeg = new FFMpegConverter();
-
-            using var ms = new MemoryStream();
-
-            float? frameTime = thumbnailTimecode >= 0
-                ? (float)thumbnailTimecode
-                : 1f;
-
-            _logger.LogInformation("Generating thumbnail for {VideoPath} at {Seek}s", videoPath, frameTime);
-
-            ffmpeg.GetVideoThumbnail(videoPath, ms, frameTime);
-            return ms.Length > 0 ? ms.ToArray() : null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to generate thumbnail for {VideoPath}", videoPath);
-            return null;
-        }
+        return _videoProcessing.ExtractFrame(videoPath, timecode);
     }
 }

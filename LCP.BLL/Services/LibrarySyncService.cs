@@ -1,4 +1,3 @@
-using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -12,6 +11,7 @@ public class LibrarySyncService : ILibrarySyncService
     private readonly IVideoRepository _repository;
     private readonly ITagRepository _tagRepository;
     private readonly IProductionInfoRepository _productionInfoRepository;
+    private readonly IVideoProcessingService _videoProcessing;
     private readonly ISmartGroupingService _smartGroupingService;
     private readonly LibrarySettings _settings;
 
@@ -19,12 +19,14 @@ public class LibrarySyncService : ILibrarySyncService
         IVideoRepository repository,
         ITagRepository tagRepository,
         IProductionInfoRepository productionInfoRepository,
+        IVideoProcessingService videoProcessing,
         ISmartGroupingService smartGroupingService,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
         _tagRepository = tagRepository;
         _productionInfoRepository = productionInfoRepository;
+        _videoProcessing = videoProcessing;
         _smartGroupingService = smartGroupingService;
         _settings = settings.Value;
     }
@@ -76,7 +78,7 @@ public class LibrarySyncService : ILibrarySyncService
             if (trackedPaths.Contains(relativePath.Replace('/', '\\'))) continue;
 
             var fullPath = Path.Combine(rootPath, relativePath);
-            var duration = FFProbeHelper.ProbeDuration(fullPath);
+            var duration = _videoProcessing.ProbeDuration(fullPath);
             allEntries.Add(new VideoMetadata
             {
                 Id = Guid.NewGuid().ToString(),

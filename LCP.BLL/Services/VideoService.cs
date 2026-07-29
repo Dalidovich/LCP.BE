@@ -16,6 +16,7 @@ public class VideoService : IVideoService
     private readonly IProductionInfoService _productionInfoService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
+    private readonly IVideoProcessingService _videoProcessing;
     private readonly ISettingsRepository _settingsRepository;
     private readonly string _libraryRootPath;
     private static int? _randomSortSeed;
@@ -28,6 +29,7 @@ public class VideoService : IVideoService
         IProductionInfoService productionInfoService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
+        IVideoProcessingService videoProcessing,
         ISettingsRepository settingsRepository,
         IOptions<LibrarySettings> settings)
     {
@@ -37,6 +39,7 @@ public class VideoService : IVideoService
         _productionInfoService = productionInfoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
+        _videoProcessing = videoProcessing;
         _settingsRepository = settingsRepository;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
@@ -272,7 +275,7 @@ public class VideoService : IVideoService
             await content.CopyToAsync(fs);
         }
 
-        var duration = FFProbeHelper.ProbeDuration(fullPath);
+        var duration = _videoProcessing.ProbeDuration(fullPath);
 
         var entry = new VideoMetadata
         {

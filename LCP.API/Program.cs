@@ -54,6 +54,7 @@ public class Program
             builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
             builder.Services.AddSingleton<IPreviewService, PreviewService>();
             builder.Services.AddSingleton<ISmartGroupingService, SmartGroupingService>();
+            builder.Services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
             builder.Services.AddSingleton<ILibrarySyncService, LibrarySyncService>();
 
             builder.Services.AddHostedService<LibrarySeedService>();

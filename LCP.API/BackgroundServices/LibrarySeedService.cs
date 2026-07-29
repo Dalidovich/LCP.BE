@@ -1,4 +1,3 @@
-using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -14,6 +13,7 @@ public class LibrarySeedService : IHostedService
     private readonly IProductionInfoRepository _productionInfoRepository;
     private readonly ISettingsRepository _settingsRepository;
     private readonly ISmartGroupingService _smartGroupingService;
+    private readonly IVideoProcessingService _videoProcessing;
     private readonly LibrarySettings _settings;
 
     public LibrarySeedService(
@@ -22,6 +22,7 @@ public class LibrarySeedService : IHostedService
         IProductionInfoRepository productionInfoRepository,
         ISettingsRepository settingsRepository,
         ISmartGroupingService smartGroupingService,
+        IVideoProcessingService videoProcessing,
         IOptions<LibrarySettings> settings)
     {
         _videoRepository = videoRepository;
@@ -29,6 +30,7 @@ public class LibrarySeedService : IHostedService
         _productionInfoRepository = productionInfoRepository;
         _settingsRepository = settingsRepository;
         _smartGroupingService = smartGroupingService;
+        _videoProcessing = videoProcessing;
         _settings = settings.Value;
     }
 
@@ -99,7 +101,7 @@ public class LibrarySeedService : IHostedService
         foreach (var file in files)
         {
             var relativePath = Path.GetRelativePath(rootPath, file);
-            var duration = FFProbeHelper.ProbeDuration(file);
+            var duration = _videoProcessing.ProbeDuration(file);
             videos.Add(new VideoMetadata
             {
                 Id = Guid.NewGuid().ToString(),
