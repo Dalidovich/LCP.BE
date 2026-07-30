@@ -37,6 +37,11 @@ public class PreviewService : IPreviewService
             Cache.TryRemove(key, out _);
     }
 
+    public void ClearAllCache()
+    {
+        Cache.Clear();
+    }
+
     public async Task<PreviewResult?> GetPreviewAsync(string videoId, PreviewResolution resolution)
     {
         var cacheKey = $"{videoId}_{resolution}";

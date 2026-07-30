@@ -34,6 +34,11 @@ public class ThumbnailService : IThumbnailService
         Cache.TryRemove(videoId, out _);
     }
 
+    public void ClearAllCache()
+    {
+        Cache.Clear();
+    }
+
     public async Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
     {
         if (Cache.TryGetValue(videoId, out var cached))

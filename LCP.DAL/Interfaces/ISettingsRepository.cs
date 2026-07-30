@@ -6,4 +6,5 @@ public interface ISettingsRepository
 {
     Task<SiteSettings?> GetAsync();
     Task UpdateAsync(SiteSettings settings);
+    Task InvalidateCacheAsync();
 }

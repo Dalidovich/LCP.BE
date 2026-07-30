@@ -56,6 +56,20 @@ public class JsonSettingsRepository : ISettingsRepository
         }
     }
 
+    public Task InvalidateCacheAsync()
+    {
+        _lock.Wait();
+        try
+        {
+            _cache = null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+        return Task.CompletedTask;
+    }
+
     private async Task<SiteSettings> LoadAsync()
     {
         if (string.IsNullOrEmpty(_filePath)) return new SiteSettings();

@@ -6,4 +6,5 @@ public interface IPreviewService
 {
     Task<PreviewResult?> GetPreviewAsync(string videoId, PreviewResolution resolution);
     void InvalidateCache(string videoId);
+    void ClearAllCache();
 }

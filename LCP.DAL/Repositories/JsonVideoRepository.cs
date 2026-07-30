@@ -127,6 +127,20 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
+    public Task InvalidateCacheAsync()
+    {
+        _lock.Wait();
+        try
+        {
+            _cache = null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+        return Task.CompletedTask;
+    }
+
     private async Task<List<VideoMetadata>> LoadAsync()
     {
         if (string.IsNullOrEmpty(_filePath)) return [];

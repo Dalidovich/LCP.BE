@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
+using LCP.DAL.Interfaces;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -13,15 +14,33 @@ public class SystemController : ControllerBase
 {
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IVideoService _videoService;
+    private readonly IVideoRepository _videoRepository;
+    private readonly ITagRepository _tagRepository;
+    private readonly ISettingsRepository _settingsRepository;
+    private readonly IProductionInfoRepository _productionInfoRepository;
+    private readonly IThumbnailService _thumbnailService;
+    private readonly IPreviewService _previewService;
     private readonly string _libraryRootPath;
 
     public SystemController(
         IHostApplicationLifetime lifetime,
         IVideoService videoService,
+        IVideoRepository videoRepository,
+        ITagRepository tagRepository,
+        ISettingsRepository settingsRepository,
+        IProductionInfoRepository productionInfoRepository,
+        IThumbnailService thumbnailService,
+        IPreviewService previewService,
         IOptions<LibrarySettings> settings)
     {
         _lifetime = lifetime;
         _videoService = videoService;
+        _videoRepository = videoRepository;
+        _tagRepository = tagRepository;
+        _settingsRepository = settingsRepository;
+        _productionInfoRepository = productionInfoRepository;
+        _thumbnailService = thumbnailService;
+        _previewService = previewService;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
@@ -113,5 +132,85 @@ public class SystemController : ControllerBase
             using var fileStream = System.IO.File.OpenRead(videoPath);
             await fileStream.CopyToAsync(entryStream, ct);
         }
+    }
+
+    [HttpPost("import")]
+    [RequestSizeLimit(200L * 1024 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 200L * 1024 * 1024 * 1024)]
+    public async Task<IActionResult> Import(IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { error = "No file uploaded" });
+
+        // 1. Clear LibraryRootPath
+        var rootDir = new DirectoryInfo(_libraryRootPath);
+        if (rootDir.Exists)
+        {
+            foreach (var f in rootDir.GetFiles())
+            {
+                ct.ThrowIfCancellationRequested();
+                try { f.Delete(); } catch { /* skip locked files */ }
+            }
+            foreach (var sub in rootDir.GetDirectories())
+            {
+                ct.ThrowIfCancellationRequested();
+                try { sub.Delete(true); } catch { /* skip locked dirs */ }
+            }
+        }
+
+        // 2. Extract ZIP contents
+        using var archive = new ZipArchive(file.OpenReadStream(), ZipArchiveMode.Read);
+
+        foreach (var entry in archive.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrEmpty(entry.Name))
+                continue;
+
+            var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+            var fullPath = Path.Combine(_libraryRootPath, entryPath);
+            var entryDir = Path.GetDirectoryName(fullPath);
+
+            if (!string.IsNullOrEmpty(entryDir) && !Directory.Exists(entryDir))
+                Directory.CreateDirectory(entryDir);
+
+            entry.ExtractToFile(fullPath, overwrite: true);
+        }
+
+        // 3. Ensure system files exist (create empty defaults if missing)
+        var systemFiles = new[]
+        {
+            LibrarySettings.JsonFileName,
+            LibrarySettings.TagsFileName,
+            LibrarySettings.SettingsFileName,
+            LibrarySettings.ProductionInfoFileName,
+        };
+
+        foreach (var sysFile in systemFiles)
+        {
+            var filePath = Path.Combine(_libraryRootPath, "SYSTEMFILES", sysFile);
+            if (!System.IO.File.Exists(filePath))
+            {
+                var sysDir = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(sysDir) && !Directory.Exists(sysDir))
+                    Directory.CreateDirectory(sysDir);
+
+                var defaultContent = sysFile == LibrarySettings.SettingsFileName
+                    ? "{}"
+                    : "[]";
+                await System.IO.File.WriteAllTextAsync(filePath, defaultContent, ct);
+            }
+        }
+
+        // 4. Invalidate all caches
+        await _videoRepository.InvalidateCacheAsync();
+        await _tagRepository.InvalidateCacheAsync();
+        await _settingsRepository.InvalidateCacheAsync();
+        await _productionInfoRepository.InvalidateCacheAsync();
+        _thumbnailService.ClearAllCache();
+        _previewService.ClearAllCache();
+
+        return Ok(new { message = "Import completed successfully" });
     }
 }
