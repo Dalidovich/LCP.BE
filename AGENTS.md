@@ -92,6 +92,11 @@ class SiteSettings {
 ["sci-fi", "thriller"]
 ```
 
+**`productionInfo.json`** — studio/studio list array:
+```json
+["Studio A", "Studio B"]
+```
+
 **`settings.json`** — site settings object:
 ```json
 {
@@ -155,6 +160,16 @@ class SiteSettings {
 | GET | `/api/settings` | Get site settings (Theme, AnimeSpeedUp, WarmCache, Debug, StatisticsMode) |
 | PUT | `/api/settings` | Update site settings |
 | POST | `/api/settings/check-password` | Check if password matches stored hash (plain-text comparison) |
+| GET | `/api/videos/random` | Return a random video |
+| POST | `/api/videos/new` | Upload a new video file (`IFormFile`, no size limit) |
+| GET | `/api/production-info` | List all studios |
+| GET | `/api/production-info/info` | Detailed production info with video counts |
+| POST | `/api/production-info` | Add a studio (body: plain string) |
+| DELETE | `/api/production-info/{studio}` | Remove a studio |
+| POST | `/api/sync` | Trigger library synchronization (re-runs sync logic) |
+| GET | `/api/system/export/info` | Backup metadata (JSON with byte/video counts) |
+| GET | `/api/system/export` | Download full backup as ZIP archive |
+| POST | `/api/system/shutdown` | Graceful server shutdown (via `IHostApplicationLifetime`) |
 
 ## Startup Jobs (`LCP.API/BackgroundServices/`)
 
@@ -205,8 +220,9 @@ All videos are included in grouping logic.
 
 ## Key Conventions
 
-- **No create endpoint** — JSON file is managed via seed/sync services
-- **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`ConcurrentDictionary<string, byte[]>` keyed by video ID). Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching.
+- **Create endpoint** — `POST /api/videos/new` uploads video files; JSON file is also managed via seed/sync services
+- **Trigram search** — `GET /api/videos?search=` uses trigram fuzzy matching on video names (not substring comparison)
+- **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`ConcurrentDictionary<string, byte[]>` keyed by video ID, max 100 entries, FIFO eviction). Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching.
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory keyed by `{id}_{resolution}`. Single-slice previews use direct conversion without temp files.
 - **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
