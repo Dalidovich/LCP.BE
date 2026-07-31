@@ -6,7 +6,8 @@ param(
     [string]$Password = "",
     [bool]$SmartVideoGrouping = $true,
     [int]$Port = 5107,
-    [string]$OutputDir = (Join-Path $env:USERPROFILE ""),
+    [string]$ListenAddress = '0.0.0.0',
+    [string]$OutputDir = (Join-Path $env:USERPROFILE ''),
     [switch]$SkipFrontendBuild,
     [switch]$Launch
 )
@@ -67,7 +68,8 @@ Write-Step "Publishing single-file exe"
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=None -p:DebugSymbols=false
+    -p:DebugType=None -p:DebugSymbols=false `
+    -p:NoWarn=MSB3246
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 Write-Step "Writing appsettings.json"
@@ -79,7 +81,7 @@ $config = @{
         }
     }
     AllowedHosts = '*'
-    Urls = "http://localhost:$Port"
+    Urls = "http://$ListenAddress`:$Port"
     LibrarySettings = @{
         LibraryRootPath = $LibraryRootPath
         Password = $Password
@@ -97,9 +99,45 @@ if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
 Copy-Item (Join-Path $PublishDir '*') $OutputDir -Recurse -Force
 
+Write-Step "Configuring Windows Firewall (TCP $Port)"
+$ruleName = "LCP API TCP $Port"
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    & netsh advfirewall firewall delete rule name=$ruleName 2>$null | Out-Null
+    & netsh advfirewall firewall add rule name=$ruleName dir=in action=allow protocol=TCP localport=$Port
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Firewall rule added: $ruleName (inbound TCP $Port)" -ForegroundColor Green
+    }
+    else {
+        Write-Warning "Failed to add firewall rule. Allow the prompt when the app first starts."
+    }
+}
+else {
+    Write-Warning 'Not running as Administrator - skipping automatic firewall rule.'
+    Write-Warning "Run this script as Administrator once, or allow the Windows firewall prompt when the app first starts."
+    Write-Warning "Manual: netsh advfirewall firewall add rule name=`"$ruleName`" dir=in action=allow protocol=TCP localport=$Port"
+}
+
+$lanIps = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } |
+    ForEach-Object { $_.IPv4Address.IPAddress } |
+    Where-Object { $_ -ne '0.0.0.0' }
+
 Write-Host "`nDone. Artifacts in: $OutputDir" -ForegroundColor Green
-Write-Host "Run: $OutputDir\LCP.API.exe  ->  http://localhost:$Port" -ForegroundColor Green
-Write-Host "Library path: $LibraryRootPath | Password: $($(if ($Password) { 'set' } else { 'none' }))" -ForegroundColor Green
+Write-Host "Local access : http://localhost:$Port" -ForegroundColor Green
+if ($lanIps) {
+    Write-Host "LAN access   :" -ForegroundColor Green
+    foreach ($ip in $lanIps) {
+        Write-Host ("                http://{0}:{1}" -f $ip, $Port) -ForegroundColor Green
+    }
+}
+else {
+    Write-Host "LAN access   : (no non-loopback IPv4 address detected)" -ForegroundColor Yellow
+}
+Write-Host "Library path : $LibraryRootPath | Password: $($(if ($Password) { 'set' } else { 'none' }))" -ForegroundColor Green
+if ($Password -eq '' -and $ListenAddress -notlike '127.*' -and $ListenAddress -ne 'localhost') {
+    Write-Warning 'Listening on the network WITHOUT a password - anyone on the LAN can access this server (including Shutdown). Consider -Password "..."'
+}
 
 if ($Launch) {
     Start-Process -FilePath (Join-Path $OutputDir 'LCP.API.exe') -WorkingDirectory $OutputDir
