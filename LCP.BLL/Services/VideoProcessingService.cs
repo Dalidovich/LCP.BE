@@ -11,25 +11,40 @@ namespace LCP.BLL.Services;
 public class VideoProcessingService : IVideoProcessingService
 {
     private readonly ILogger<VideoProcessingService> _logger;
+    private static string? _ffmpegExePath;
 
     public VideoProcessingService(ILogger<VideoProcessingService> logger)
     {
         _logger = logger;
     }
 
+    private static string GetFfmpegExePath()
+    {
+        if (_ffmpegExePath is not null)
+            return _ffmpegExePath;
+
+        var toolDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LCP", "ffmpeg");
+        Directory.CreateDirectory(toolDir);
+
+        var converter = new FFMpegConverter();
+        converter.FFMpegToolPath = toolDir;
+        converter.ExtractFFmpeg();
+
+        var exePath = Path.Combine(toolDir, converter.FFMpegExeName);
+        if (!File.Exists(exePath))
+            throw new InvalidOperationException($"ffmpeg not found at {exePath}");
+
+        _ffmpegExePath = exePath;
+        return exePath;
+    }
+
     public double ProbeDuration(string videoPath)
     {
         try
         {
-            var probe = new FFMpegConverter();
-            probe.ExtractFFmpeg();
-
-            var ffmpegPath = Path.Combine(probe.FFMpegToolPath, probe.FFMpegExeName);
-            if (!File.Exists(ffmpegPath))
-            {
-                _logger.LogWarning("ffmpeg not found at {Path}", ffmpegPath);
-                return 0;
-            }
+            var ffmpegPath = GetFfmpegExePath();
 
             var psi = new ProcessStartInfo
             {
@@ -74,6 +89,7 @@ public class VideoProcessingService : IVideoProcessingService
         try
         {
             var ffmpeg = new FFMpegConverter();
+            ffmpeg.FFMpegToolPath = Path.GetDirectoryName(GetFfmpegExePath())!;
 
             using var ms = new MemoryStream();
 
@@ -107,6 +123,7 @@ public class VideoProcessingService : IVideoProcessingService
         try
         {
             var ffmpeg = new FFMpegConverter();
+            ffmpeg.FFMpegToolPath = Path.GetDirectoryName(GetFfmpegExePath())!;
 
             if (slices.Count == 1)
             {

@@ -84,7 +84,25 @@ public class Program
 
             app.UseAuthorization();
 
+            if (Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot")))
+            {
+                app.UseDefaultFiles();
+                app.UseStaticFiles();
+            }
+
             app.MapControllers();
+
+            if (Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot")))
+            {
+                app.MapWhen(
+                    context => !context.Request.Path.StartsWithSegments("/api"),
+                    spa => spa.Run(async context =>
+                    {
+                        context.Response.ContentType = "text/html";
+                        await context.Response.SendFileAsync(
+                            Path.Combine(app.Environment.WebRootPath, "index.html"));
+                    }));
+            }
 
             Log.Information("Application starting");
             app.Run();
