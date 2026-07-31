@@ -23,21 +23,38 @@ public class VideoProcessingService : IVideoProcessingService
         if (_ffmpegExePath is not null)
             return _ffmpegExePath;
 
-        var toolDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LCP", "ffmpeg");
-        Directory.CreateDirectory(toolDir);
+        var candidates = new[]
+        {
+            AppContext.BaseDirectory,
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LCP", "ffmpeg")
+        };
 
-        var converter = new FFMpegConverter();
-        converter.FFMpegToolPath = toolDir;
-        converter.ExtractFFmpeg();
+        foreach (var toolDir in candidates)
+        {
+            try
+            {
+                Directory.CreateDirectory(toolDir);
 
-        var exePath = Path.Combine(toolDir, converter.FFMpegExeName);
-        if (!File.Exists(exePath))
-            throw new InvalidOperationException($"ffmpeg not found at {exePath}");
+                var converter = new FFMpegConverter();
+                converter.FFMpegToolPath = toolDir;
+                converter.ExtractFFmpeg();
 
-        _ffmpegExePath = exePath;
-        return exePath;
+                var exePath = Path.Combine(toolDir, converter.FFMpegExeName);
+                if (!File.Exists(exePath))
+                    continue;
+
+                _ffmpegExePath = exePath;
+                return exePath;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        throw new InvalidOperationException(
+            "ffmpeg could not be extracted (tried exe directory and %LOCALAPPDATA%\\LCP\\ffmpeg)");
     }
 
     public double ProbeDuration(string videoPath)

@@ -108,6 +108,42 @@ dotnet run --project LCP.API
 
 Profiles: `http` (5107), `https` (7162) — see `LCP.API/Properties/launchSettings.json`.
 
+## Single-file EXE build (`build-single-exe.ps1`)
+
+Builds the frontend, bundles it into the API and publishes a self-contained single-file `LCP.API.exe` (Windows x64) with a ready-to-edit `appsettings.json` next to it. The result runs without .NET or Node installed on the target machine.
+
+```powershell
+.\build-single-exe.ps1 `
+    -BackendDir "D:\repos\LCP.BE" `
+    -FrontendDir "D:\NodeProject\LCP.FE" `
+    -LibraryRootPath "D:\Media" `
+    -Password "secret" `
+    -Port 5107 `
+    -OutputDir "C:\Users\you\Downloads\LCP" `
+    -Launch
+```
+
+| Parameter | Description | Default |
+|---|---|---|
+| `BackendDir` | Path to the LCP.BE repo (must contain `LCP.API`) | required |
+| `FrontendDir` | Path to the LCP.FE project | required |
+| `LibraryRootPath` | Root directory of the video library | required |
+| `Password` | Frontend auth password (empty = no auth) | `""` |
+| `SmartVideoGrouping` | Auto-group videos into collections by filename pattern | `$true` |
+| `Port` | HTTP port to listen on | `5107` |
+| `ListenAddress` | Bind address (`0.0.0.0` = all interfaces, `127.0.0.1` = local only) | `0.0.0.0` |
+| `OutputDir` | Destination folder for the exe + config | user profile directory |
+| `SkipFrontendBuild` | Reuse the existing frontend `dist` instead of rebuilding | `$false` |
+| `Launch` | Start the built exe after publishing | `$false` |
+
+Notes:
+
+- **Always pass `-OutputDir`.** The script clears the output folder before copying artifacts into it.
+- With an empty `Password` and a non-loopback `ListenAddress`, the script warns that anyone on the LAN can reach the server (including `/api/system/shutdown`).
+- When run **as Administrator**, the script adds a Windows Firewall inbound rule for TCP `Port` automatically; otherwise it prints the manual `netsh` command. Note that on a **Public** network profile, Windows Firewall blocks inbound traffic for this app regardless, so use a **Private** profile or flip the app rules to Allow.
+- After the build the script prints the local and LAN URLs (`http://<ip>:<port>`).
+- The single-file exe extracts ffmpeg next to the executable on first use (falling back to `%LOCALAPPDATA%\LCP\ffmpeg` only if the exe folder is not writable), because NReco cannot resolve its bundled tools inside a single-file assembly.
+
 ## Dependencies
 
 | Package | Version | Purpose |
