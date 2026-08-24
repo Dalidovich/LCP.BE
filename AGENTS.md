@@ -177,7 +177,7 @@ class SiteSettings {
 | POST | `/api/settings/logout` | Clear the session cookie |
 | GET | `/api/settings/session` | Whether the caller is authenticated, or `true` when the gate is disabled. `[AllowAnonymous]` |
 | GET | `/api/videos/random` | Return a random video |
-| POST | `/api/videos/new` | Upload a new video file (`IFormFile`). Rejects extensions outside `VideoFileExtensions.Supported` and files larger than `LibrarySettings.MaxUploadBytes`, both with `400 {"error": "..."}` |
+| POST | `/api/videos/new` | Upload a new video file (`IFormFile`). Rejects extensions outside `VideoFileExtensions.Supported` and files larger than `LibrarySettings.MaxUploadBytes`, both with `400 {"error": "..."}`. The write is atomic (see Upload Atomicity below); I/O failures also return `400` |
 | GET | `/api/production-info` | List all studios |
 | GET | `/api/production-info/info` | Detailed production info with video counts |
 | POST | `/api/production-info` | Add a studio (body: plain string) |
@@ -186,6 +186,18 @@ class SiteSettings {
 | GET | `/api/system/export/info` | Backup metadata (JSON with byte/video counts) |
 | GET | `/api/system/export` | Download full backup as ZIP archive |
 | POST | `/api/system/shutdown` | Graceful server shutdown (via `IHostApplicationLifetime`) |
+
+## Upload Atomicity
+
+`VideoService.AddVideoFileAsync` never leaves a file without a metadata entry:
+
+1. The stream is written to `{LibraryRootPath}\.lcp-upload-{guid}.tmp` — same volume, so the later move is a rename; the `.tmp` extension keeps sync from indexing it.
+2. `ProbeDuration` runs on the temp file, before any name is claimed.
+3. The destination name is claimed by `File.Move` in a retry loop (`sample.mp4`, `sample (1).mp4`, …, max 1000 attempts). The move itself is the claim, so concurrent uploads of the same filename cannot collide.
+4. The metadata entry is committed last, via `IVideoRepository.MutateAsync`.
+5. A `finally` block deletes the temp file always, and the moved file too when the metadata commit failed. Cleanup failures are logged at warning level through `ILogger<VideoService>`.
+
+`IOException` and `UnauthorizedAccessException` return `null`, which `VideosController.Add` turns into `400 {"error": "Failed to add video"}`. Other exceptions propagate to `ExceptionHandlingMiddleware`.
 
 ## Startup Jobs (`LCP.API/BackgroundServices/`)
 
@@ -251,7 +263,7 @@ All videos are included in grouping logic.
 - **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`MediaCache<ThumbnailResult>` keyed by video ID — byte-bounded LRU, limit `LibrarySettings.ThumbnailCacheBytes`, default 64 MB). Each entry stores the bytes together with the generation timestamp (truncated to whole seconds), so the ETag and `Last-Modified` stay stable across cache hits and conditional requests return `304`. Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching (uncached entries get a fresh timestamp and never revalidate).
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory as `MediaCache<PreviewResult>` keyed by `{id}_{resolution}` — byte-bounded LRU, limit `LibrarySettings.PreviewCacheBytes`, default 512 MB — with entries carrying the generation timestamp (truncated to whole seconds) for stable ETag revalidation. `InvalidateCache(id)` removes every resolution by key prefix. Single-slice previews use direct conversion without temp files.
 - **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance. Reads return detached deep copies (`VideoMetadata.Clone()`, `SiteSettings.Clone()`), so caller mutations never reach the cache until `SaveAllAsync`/`UpdateAsync`
-- **Read-modify-write on videos** — never `GetAllRawAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate
+- **Read-modify-write on videos** — never `GetAllRawAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate. When the persist throws, `MutateAsync` and `SaveAllAsync` drop the in-memory cache before rethrowing, so the next read reloads the last state that actually reached disk
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
 - **CORS** — restricted to an explicit origin list from `Cors:AllowedOrigins` (defaults to `http://localhost:4200` when absent or empty); any header/method allowed, credentials allowed. Both supported deployments are same-origin (dev proxy via `LCP.FE/proxy.conf.json`, prod SPA served from `wwwroot`), so no wildcard origin is needed
 - **Global error handling** — `ExceptionHandlingMiddleware` catches unhandled exceptions, logs them with path/method, returns JSON `{ error, statusCode }` with 500. If the response has already started (streaming endpoints: export, video stream/preview), it logs and calls `context.Abort()` instead of writing — the client sees a broken transfer rather than a truncated body with `200 OK`. Client disconnects (`OperationCanceledException` with `RequestAborted`) are logged at information level, not as errors

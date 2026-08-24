@@ -5,6 +5,7 @@ using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using LCP.Domain;
 using LCP.Domain.Entities;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace LCP.BLL.Services;
@@ -19,7 +20,9 @@ public class VideoService : IVideoService
     private readonly IPreviewService _previewService;
     private readonly IVideoProcessingService _videoProcessing;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly ILogger<VideoService> _logger;
     private readonly string _libraryRootPath;
+    private const int MaxNameClaimAttempts = 1000;
     private static int? _randomSortSeed;
     private static bool _randomSortWasEnabled;
 
@@ -32,6 +35,7 @@ public class VideoService : IVideoService
         IPreviewService previewService,
         IVideoProcessingService videoProcessing,
         ISettingsRepository settingsRepository,
+        ILogger<VideoService> logger,
         IOptions<LibrarySettings> settings)
     {
         _repository = repository;
@@ -42,6 +46,7 @@ public class VideoService : IVideoService
         _previewService = previewService;
         _videoProcessing = videoProcessing;
         _settingsRepository = settingsRepository;
+        _logger = logger;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
@@ -267,41 +272,94 @@ public class VideoService : IVideoService
     {
         var ext = Path.GetExtension(fileName);
         var rawName = Path.GetFileNameWithoutExtension(fileName);
-        var name = rawName;
-        var counter = 1;
-        while (File.Exists(Path.Combine(_libraryRootPath, $"{name}{ext}")))
-            name = $"{rawName} ({counter++})";
 
-        var relativePath = $"{name}{ext}";
-        var fullPath = Path.Combine(_libraryRootPath, relativePath);
+        if (!Directory.Exists(_libraryRootPath))
+            Directory.CreateDirectory(_libraryRootPath);
 
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
+        var tempPath = Path.Combine(_libraryRootPath, $".lcp-upload-{Guid.NewGuid():N}.tmp");
+        string? claimedPath = null;
 
-        await using (var fs = new FileStream(fullPath, FileMode.CreateNew))
+        try
         {
-            await content.CopyToAsync(fs);
+            await using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                await content.CopyToAsync(fs);
+            }
+
+            var duration = _videoProcessing.ProbeDuration(tempPath);
+
+            var relativePath = ClaimDestination(tempPath, rawName, ext);
+            if (relativePath is null)
+            {
+                _logger.LogWarning("Could not claim a free file name for upload {FileName}", fileName);
+                return null;
+            }
+
+            claimedPath = Path.Combine(_libraryRootPath, relativePath);
+
+            var entry = new VideoMetadata
+            {
+                Id = Guid.NewGuid().ToString(),
+                RelativePath = relativePath,
+                SystemName = rawName,
+                Duration = duration,
+                PreviewSlices = PreviewSlice.CalculateSlices(duration)
+            };
+
+            await _repository.MutateAsync<object?>(entries =>
+            {
+                entries.Add(entry.Clone());
+                return (true, null);
+            });
+
+            claimedPath = null;
+            return MapToDto(entry);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Upload of {FileName} failed", fileName);
+            return null;
+        }
+        finally
+        {
+            TryDelete(tempPath);
+            if (claimedPath is not null)
+                TryDelete(claimedPath);
+        }
+    }
+
+    private string? ClaimDestination(string tempPath, string rawName, string ext)
+    {
+        for (var counter = 0; counter < MaxNameClaimAttempts; counter++)
+        {
+            var name = counter == 0 ? rawName : $"{rawName} ({counter})";
+            var relativePath = $"{name}{ext}";
+            var fullPath = Path.Combine(_libraryRootPath, relativePath);
+
+            try
+            {
+                File.Move(tempPath, fullPath);
+                return relativePath;
+            }
+            catch (IOException) when (File.Exists(fullPath))
+            {
+            }
         }
 
-        var duration = _videoProcessing.ProbeDuration(fullPath);
+        return null;
+    }
 
-        var entry = new VideoMetadata
+    private void TryDelete(string path)
+    {
+        try
         {
-            Id = Guid.NewGuid().ToString(),
-            RelativePath = relativePath,
-            SystemName = rawName,
-            Duration = duration,
-            PreviewSlices = PreviewSlice.CalculateSlices(duration)
-        };
-
-        await _repository.MutateAsync<object?>(entries =>
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
         {
-            entries.Add(entry.Clone());
-            return (true, null);
-        });
-
-        return MapToDto(entry);
+            _logger.LogWarning(ex, "Failed to remove leftover upload file {Path}", path);
+        }
     }
 
     public async Task<VideoDto?> GetRandomAsync()

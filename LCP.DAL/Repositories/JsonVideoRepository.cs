@@ -121,7 +121,15 @@ public class JsonVideoRepository : IVideoRepository
         try
         {
             _cache = [.. videos.Select(v => v.Clone())];
-            await SaveAsync(videos);
+            try
+            {
+                await SaveAsync(videos);
+            }
+            catch
+            {
+                _cache = null;
+                throw;
+            }
         }
         finally
         {
@@ -138,7 +146,15 @@ public class JsonVideoRepository : IVideoRepository
             var (changed, result) = mutation(_cache);
             if (changed)
             {
-                await SaveAsync(_cache);
+                try
+                {
+                    await SaveAsync(_cache);
+                }
+                catch
+                {
+                    _cache = null;
+                    throw;
+                }
             }
             return result;
         }
