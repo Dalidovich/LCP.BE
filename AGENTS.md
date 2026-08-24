@@ -169,7 +169,7 @@ class SiteSettings {
 | POST | `/api/tags` | Add a tag (body: plain string) |
 | DELETE | `/api/tags/{tag}` | Remove a tag (also strips from all videos) |
 | GET | `/api/collections?page=1&pageSize=20` | Paginated list of collection IDs with video count |
-| GET | `/api/collections/{collectionId}/videos?page=1&pageSize=20` | Paginated videos in a collection |
+| GET | `/api/collections/{collectionId}/videos?page=1&pageSize=20` | Paginated videos in a collection. Without `search`, ordered by `EpisodeNumber` ascending with `-1` entries last (then `SystemName`); `RandomSort`/`StatisticsMode` do not apply. With `search`, ordered by search score. |
 | GET | `/api/settings` | Get site settings (Theme, AnimeSpeedUp, WarmCache, Debug, StatisticsMode) |
 | PUT | `/api/settings` | Update site settings |
 | GET | `/api/settings/gate-enabled` | Whether a password gate is configured; never returns the hash, salt or its length. `[AllowAnonymous]` |

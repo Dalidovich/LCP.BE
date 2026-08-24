@@ -135,7 +135,11 @@ public class VideoService : IVideoService
         }
         else
         {
-            ordered = await ApplyOrderingAsync(videos);
+            ordered = videos
+                .OrderBy(v => v.EpisodeNumber < 0 ? 1 : 0)
+                .ThenBy(v => v.EpisodeNumber)
+                .ThenBy(v => v.SystemName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         var totalCount = ordered.Count;
