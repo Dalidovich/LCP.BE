@@ -16,6 +16,7 @@ public class PreviewService : IPreviewService
     private readonly string _libraryRootPath;
     private readonly ILogger<PreviewService> _logger;
     private readonly MediaCache<PreviewResult> _cache;
+    private readonly InFlightCoalescer<PreviewResult> _inFlight = new();
 
     public PreviewService(
         IVideoRepository repository,
@@ -40,10 +41,18 @@ public class PreviewService : IPreviewService
         _cache.Clear();
     }
 
-    public async Task<PreviewResult?> GetPreviewAsync(string videoId, PreviewResolution resolution)
+    public Task<PreviewResult?> GetPreviewAsync(string videoId, PreviewResolution resolution)
     {
         var cacheKey = $"{videoId}_{resolution}";
 
+        if (_cache.TryGet(cacheKey, out var cached))
+            return Task.FromResult<PreviewResult?>(cached);
+
+        return _inFlight.RunAsync(cacheKey, () => GenerateAndCacheAsync(videoId, resolution, cacheKey));
+    }
+
+    private async Task<PreviewResult?> GenerateAndCacheAsync(string videoId, PreviewResolution resolution, string cacheKey)
+    {
         if (_cache.TryGet(cacheKey, out var cached))
             return cached;
 

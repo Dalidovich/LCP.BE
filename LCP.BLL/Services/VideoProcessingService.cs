@@ -12,6 +12,7 @@ public class VideoProcessingService : IVideoProcessingService
 {
     private readonly ILogger<VideoProcessingService> _logger;
     private static string? _ffmpegExePath;
+    private static readonly SemaphoreSlim FfmpegLimiter = new(Math.Max(1, Environment.ProcessorCount / 2));
 
     public VideoProcessingService(ILogger<VideoProcessingService> logger)
     {
@@ -57,7 +58,25 @@ public class VideoProcessingService : IVideoProcessingService
             "ffmpeg could not be extracted (tried exe directory and %LOCALAPPDATA%\\LCP\\ffmpeg)");
     }
 
+    private static T RunThrottled<T>(Func<T> operation)
+    {
+        FfmpegLimiter.Wait();
+        try
+        {
+            return operation();
+        }
+        finally
+        {
+            FfmpegLimiter.Release();
+        }
+    }
+
     public double ProbeDuration(string videoPath)
+    {
+        return RunThrottled(() => ProbeDurationCore(videoPath));
+    }
+
+    private double ProbeDurationCore(string videoPath)
     {
         try
         {
@@ -103,6 +122,11 @@ public class VideoProcessingService : IVideoProcessingService
 
     public byte[]? ExtractFrame(string videoPath, double timecode)
     {
+        return RunThrottled(() => ExtractFrameCore(videoPath, timecode));
+    }
+
+    private byte[]? ExtractFrameCore(string videoPath, double timecode)
+    {
         try
         {
             var ffmpeg = new FFMpegConverter();
@@ -127,6 +151,11 @@ public class VideoProcessingService : IVideoProcessingService
     }
 
     public byte[]? GeneratePreview(string videoPath, PreviewResolution resolution, List<PreviewSlice> slices)
+    {
+        return RunThrottled(() => GeneratePreviewCore(videoPath, resolution, slices));
+    }
+
+    private byte[]? GeneratePreviewCore(string videoPath, PreviewResolution resolution, List<PreviewSlice> slices)
     {
         var (width, height) = resolution switch
         {

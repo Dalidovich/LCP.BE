@@ -1,6 +1,5 @@
 ﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
-using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,7 +12,7 @@ public class VideosController : ControllerBase
     private readonly IVideoService _videoService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
-    private readonly ISettingsRepository _settingsRepository;
+    private readonly IMediaWarmupService _warmupService;
     private readonly ITagService _tagService;
     private readonly IProductionInfoService _productionInfoService;
     private const string CacheControlValue = "private, max-age=0, must-revalidate";
@@ -22,14 +21,14 @@ public class VideosController : ControllerBase
         IVideoService videoService,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
-        ISettingsRepository settingsRepository,
+        IMediaWarmupService warmupService,
         ITagService tagService,
         IProductionInfoService productionInfoService)
     {
         _videoService = videoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
-        _settingsRepository = settingsRepository;
+        _warmupService = warmupService;
         _tagService = tagService;
         _productionInfoService = productionInfoService;
     }
@@ -37,9 +36,7 @@ public class VideosController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<VideoDto>>> GetAll([FromQuery] string? search = null)
     {
-        var videos = await _videoService.GetAllAsync(search);
-        _ = WarmCacheAsync(videos);
-        return videos;
+        return await _videoService.GetAllAsync(search);
     }
 
     [HttpGet("paged")]
@@ -60,7 +57,7 @@ public class VideosController : ControllerBase
             return BadRequest();
 
         var result = await _videoService.GetPagedAsync(page, pageSize, tags, productionInfo, search);
-        _ = WarmCacheAsync(result.Items);
+        _warmupService.QueueWarm(result.Items.Select(v => v.Id).ToList(), HttpContext.RequestAborted);
         return result;
     }
 
@@ -237,19 +234,5 @@ public class VideosController : ControllerBase
             ".ts" => "video/mp2t",
             _ => "application/octet-stream"
         };
-    }
-
-    private async Task WarmCacheAsync(List<VideoDto> videos)
-    {
-        var settings = await _settingsRepository.GetAsync();
-        if (settings is null || !settings.WarmCache || videos.Count == 0)
-            return;
-
-        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 2 };
-        await Parallel.ForEachAsync(videos, parallelOptions, async (video, ct) =>
-        {
-            await _thumbnailService.GetThumbnailAsync(video.Id);
-            await _previewService.GetPreviewAsync(video.Id, PreviewResolution.Preview144);
-        });
     }
 }

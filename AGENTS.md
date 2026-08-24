@@ -200,7 +200,15 @@ Uses `ScoreAndInterleave` in `VideoService.cs:202`:
 
 ## Warm Cache Behavior
 
-When `WarmCache` is enabled in site settings, `VideosController.GetAll()` and `CollectionsController.GetVideos()` asynchronously pre-generate thumbnails and 144p previews for returned videos using `Parallel.ForEachAsync` with `MaxDegreeOfParallelism = 2`. This runs in the background (fire-and-forget with `_ = WarmCacheAsync(...)`).
+Warming lives in `MediaWarmupService` (`LCP.BLL/Services/MediaWarmupService.cs`, singleton). It is triggered only by the paged endpoints `VideosController.GetPaged()` and `CollectionsController.GetVideos()` via `IMediaWarmupService.QueueWarm(videoIds, HttpContext.RequestAborted)`. The unpaginated `VideosController.GetAll()` no longer warms, since it returns the whole library.
+
+When `WarmCache` is enabled in site settings, a pass pre-generates thumbnails and 144p previews for the returned page using `Parallel.ForEachAsync` with `MaxDegreeOfParallelism = 2`, in the background. The pass:
+
+- is guarded by a `SemaphoreSlim(1,1)` acquired with `Wait(0)` — a request is skipped outright while another pass is running, so passes never stack
+- observes the request's `CancellationToken`, so a client disconnect aborts warming
+- logs per-video failures and pass-level failures instead of swallowing them
+
+Generation itself is deduplicated per cache key by `InFlightCoalescer<T>` in `ThumbnailService`/`PreviewService`, and all ffmpeg work is throttled process-wide by a static `SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2))` in `VideoProcessingService`.
 
 ## Smart Video Grouping
 

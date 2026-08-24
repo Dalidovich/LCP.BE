@@ -15,6 +15,7 @@ public class ThumbnailService : IThumbnailService
     private readonly string _libraryRootPath;
     private readonly ILogger<ThumbnailService> _logger;
     private readonly MediaCache<ThumbnailResult> _cache;
+    private readonly InFlightCoalescer<ThumbnailResult> _inFlight = new();
 
     public ThumbnailService(
         IVideoRepository repository,
@@ -39,7 +40,15 @@ public class ThumbnailService : IThumbnailService
         _cache.Clear();
     }
 
-    public async Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
+    public Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
+    {
+        if (_cache.TryGet(videoId, out var cached))
+            return Task.FromResult<ThumbnailResult?>(cached);
+
+        return _inFlight.RunAsync(videoId, () => GenerateAndCacheAsync(videoId));
+    }
+
+    private async Task<ThumbnailResult?> GenerateAndCacheAsync(string videoId)
     {
         if (_cache.TryGet(videoId, out var cached))
             return cached;
