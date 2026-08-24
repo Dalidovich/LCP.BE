@@ -244,7 +244,8 @@ When `SmartVideoGrouping: true` in `appsettings.json`, the seed and sync jobs au
 3. Videos with the same clean name form a **group**; the clean name becomes the group's `CollectionId`
 4. Single-video groups have their `CollectionId` set to `"default"`
 5. Videos with empty or unparsable `SystemName` also go into `"default"`
-6. **Prefix matching**: a solo video whose clean name starts with a multi-video group's key is absorbed into that group
+6. **Prefix matching**: a solo video whose clean name starts with a multi-video group's key is absorbed into that group. When several multi-video keys match, the **longest** one wins; equal lengths are broken by ordinal comparison of the keys, and the solo keys are processed in ordinal order, so the outcome never depends on dictionary enumeration order
+7. **Absorption is not transitive**: the set of multi-video keys is computed once from the original grouping. A group that only reaches two videos by absorbing a solo one is not itself a candidate target for further absorption in the same pass
 
 **Example:**
 ```

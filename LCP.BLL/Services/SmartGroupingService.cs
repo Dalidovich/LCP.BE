@@ -24,7 +24,7 @@ public class SmartGroupingService : ISmartGroupingService
         var changed = false;
 
         var dict = new Dictionary<string, List<VideoMetadata>>(StringComparer.OrdinalIgnoreCase);
-        var defaultVideos = new List<VideoMetadata>();
+        var defaultVideos = new HashSet<VideoMetadata>();
 
         foreach (var video in allEntries)
         {
@@ -49,23 +49,30 @@ public class SmartGroupingService : ISmartGroupingService
             list.Add(video);
         }
 
-        var multiKeys = dict
+        var multiKeysByLongestFirst = dict
             .Where(kvp => kvp.Value.Count >= 2)
             .Select(kvp => kvp.Key)
+            .OrderByDescending(key => key.Length)
+            .ThenBy(key => key, StringComparer.Ordinal)
             .ToList();
 
-        foreach (var kvp in dict.Where(kvp => kvp.Value.Count == 1).ToList())
-        {
-            var singleKey = kvp.Key;
-            foreach (var multiKey in multiKeys)
+        var absorptions = dict
+            .Where(kvp => kvp.Value.Count == 1)
+            .Select(kvp => kvp.Key)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .Select(singleKey => new
             {
-                if (singleKey.StartsWith(multiKey, StringComparison.OrdinalIgnoreCase))
-                {
-                    dict[multiKey].AddRange(kvp.Value);
-                    dict.Remove(singleKey);
-                    break;
-                }
-            }
+                SingleKey = singleKey,
+                TargetKey = multiKeysByLongestFirst.FirstOrDefault(multiKey =>
+                    singleKey.StartsWith(multiKey, StringComparison.OrdinalIgnoreCase))
+            })
+            .Where(absorption => absorption.TargetKey is not null)
+            .ToList();
+
+        foreach (var absorption in absorptions)
+        {
+            dict[absorption.TargetKey!].AddRange(dict[absorption.SingleKey]);
+            dict.Remove(absorption.SingleKey);
         }
 
         foreach (var (key, videos) in dict)
@@ -85,7 +92,6 @@ public class SmartGroupingService : ISmartGroupingService
                     if (video.CollectionId != DefaultGroup)
                     {
                         defaultVideos.Add(video);
-                        changed = true;
                     }
                 }
             }
@@ -94,8 +100,9 @@ public class SmartGroupingService : ISmartGroupingService
         foreach (var video in defaultVideos)
         {
             video.CollectionId = DefaultGroup;
-            changed = true;
         }
+
+        changed |= defaultVideos.Count > 0;
 
         return changed;
     }
