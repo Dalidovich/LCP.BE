@@ -91,8 +91,7 @@ public class Program
             builder.Services.AddSingleton<IMediaWarmupService, MediaWarmupService>();
             builder.Services.AddSingleton<ILibrarySyncService, LibrarySyncService>();
 
-            builder.Services.AddHostedService<LibrarySeedService>();
-            builder.Services.AddHostedService<LibrarySyncBackgroundService>();
+            builder.Services.AddHostedService<LibraryStartupService>();
 
             var allowedOrigins = builder.Configuration
                 .GetSection("Cors:AllowedOrigins")

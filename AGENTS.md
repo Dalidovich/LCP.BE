@@ -183,12 +183,14 @@ class SiteSettings {
 
 ## Startup Jobs (`LCP.API/BackgroundServices/`)
 
-| Service | Order | Description |
-|---|---|---|
-| `LibrarySeedService` | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
-| `LibrarySyncService` | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+`LibraryStartupService` is a single `BackgroundService`. Its `ExecuteAsync` runs off the startup path, so Kestrel starts listening immediately, and it performs both phases in order inside one task.
 
-Both run once on startup. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
+| Phase | Order | Description |
+|---|---|---|
+| Seed | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
+| Sync (`LibrarySyncService`) | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+
+Both phases run once per startup, sequentially, so they never race on `library.json`. The `stoppingToken` is honoured in the seed scan loop, so shutdown during indexing exits promptly. Any failure is caught and logged; it never aborts host startup. Progress and completion are logged via `ILogger<LibraryStartupService>`. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
 
 ## Similar Videos Scoring Algorithm
 
