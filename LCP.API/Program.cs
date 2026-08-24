@@ -1,4 +1,4 @@
-using LCP.API.BackgroundServices;
+﻿using LCP.API.BackgroundServices;
 using LCP.API.Middleware;
 using LCP.BLL.Interfaces;
 using LCP.BLL.Services;
@@ -77,8 +77,11 @@ public class Program
 
             app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-            app.UseSwagger();
-            app.UseSwaggerUI();
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
 
             app.UseCors();
 

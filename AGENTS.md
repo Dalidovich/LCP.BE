@@ -243,7 +243,7 @@ dotnet run --project LCP.API
 
 Profiles: `http` (port 5107), `https` (port 7162) — see `Properties/launchSettings.json`.
 
-Swagger UI at `/swagger`.
+Swagger UI at `/swagger` — development environment only (`ASPNETCORE_ENVIRONMENT=Development`); returns 404 in production.
 
 ## Package Dependencies
 
