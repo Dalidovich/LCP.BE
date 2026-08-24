@@ -1,4 +1,4 @@
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Interfaces;
 using LCP.Domain.Entities;
@@ -16,6 +16,7 @@ public class VideosController : ControllerBase
     private readonly ISettingsRepository _settingsRepository;
     private readonly ITagService _tagService;
     private readonly IProductionInfoService _productionInfoService;
+    private const string CacheControlValue = "private, max-age=0, must-revalidate";
 
     public VideosController(
         IVideoService videoService,
@@ -146,12 +147,14 @@ public class VideosController : ControllerBase
         var result = await _previewService.GetPreviewAsync(id, resolution);
         if (result is null) return NotFound();
 
-        var etag = $"\"{result.LastModified.Ticks:x}\"";
-
-        if (Request.Headers.IfNoneMatch.ToString() == etag)
-            return StatusCode(304);
+        var etag = BuildETag(result.LastModified);
 
         Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = CacheControlValue;
+
+        if (IsNotModified(etag))
+            return StatusCode(StatusCodes.Status304NotModified);
+
         Response.Headers.LastModified = result.LastModified.ToString("R");
         Response.Headers.AcceptRanges = "bytes";
 
@@ -176,15 +179,47 @@ public class VideosController : ControllerBase
 
         if (result is null) return NotFound();
 
-        var etag = $"\"{result.LastModified.Ticks:x}\"";
-
-        if (Request.Headers.IfNoneMatch.ToString() == etag)
-            return StatusCode(304);
+        var etag = BuildETag(result.LastModified);
 
         Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = CacheControlValue;
+
+        if (IsNotModified(etag))
+            return StatusCode(StatusCodes.Status304NotModified);
+
         Response.Headers.LastModified = result.LastModified.ToString("R");
 
         return File(result.Data, "image/jpeg");
+    }
+
+    private static string BuildETag(DateTime lastModified)
+    {
+        return $"\"{lastModified.Ticks:x}\"";
+    }
+
+    private bool IsNotModified(string etag)
+    {
+        var ifNoneMatch = Request.Headers.IfNoneMatch;
+        if (ifNoneMatch.Count == 0) return false;
+
+        foreach (var header in ifNoneMatch)
+        {
+            if (string.IsNullOrWhiteSpace(header)) continue;
+
+            foreach (var candidate in header.Split(','))
+            {
+                var value = candidate.Trim();
+                if (value == "*") return true;
+
+                if (value.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
+                    value = value[2..].Trim();
+
+                if (string.Equals(value, etag, StringComparison.Ordinal))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static string GetContentType(string extension)

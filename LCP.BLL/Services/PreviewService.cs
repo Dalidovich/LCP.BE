@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
@@ -16,7 +16,7 @@ public class PreviewService : IPreviewService
     private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
     private readonly ILogger<PreviewService> _logger;
-    private static readonly ConcurrentDictionary<string, byte[]> Cache = new();
+    private static readonly ConcurrentDictionary<string, PreviewResult> Cache = new();
     private const int MaxCacheSize = 100;
 
     public PreviewService(
@@ -48,7 +48,7 @@ public class PreviewService : IPreviewService
         var cacheKey = $"{videoId}_{resolution}";
 
         if (Cache.TryGetValue(cacheKey, out var cached))
-            return new PreviewResult(cached, DateTime.UtcNow);
+            return cached;
 
         var video = await _repository.GetByIdAsync(videoId);
         if (video is null) return null;
@@ -60,9 +60,17 @@ public class PreviewService : IPreviewService
         var data = await Task.Run(() => GeneratePreview(videoPath, resolution, slices));
         if (data is null) return null;
 
+        var result = new PreviewResult(data, TruncateToSecond(DateTime.UtcNow));
+
         EvictIfNeeded();
-        Cache[cacheKey] = data;
-        return new PreviewResult(data, DateTime.UtcNow);
+        Cache[cacheKey] = result;
+        return result;
+    }
+
+    private static DateTime TruncateToSecond(DateTime value)
+    {
+        var ticks = value.Ticks;
+        return new DateTime(ticks - ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
     }
 
     private static void EvictIfNeeded()

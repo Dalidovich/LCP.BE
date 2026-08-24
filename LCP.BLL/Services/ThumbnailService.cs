@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
@@ -15,7 +15,7 @@ public class ThumbnailService : IThumbnailService
     private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
     private readonly ILogger<ThumbnailService> _logger;
-    private static readonly ConcurrentDictionary<string, byte[]> Cache = new();
+    private static readonly ConcurrentDictionary<string, ThumbnailResult> Cache = new();
     private const int MaxCacheSize = 100;
 
     public ThumbnailService(
@@ -43,7 +43,7 @@ public class ThumbnailService : IThumbnailService
     public async Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
     {
         if (Cache.TryGetValue(videoId, out var cached))
-            return new ThumbnailResult(cached, DateTime.UtcNow);
+            return cached;
 
         var video = await _repository.GetByIdAsync(videoId);
         if (video is null) return null;
@@ -54,9 +54,11 @@ public class ThumbnailService : IThumbnailService
         var data = await Task.Run(() => ExtractFrame(videoPath, video.ThumbnailTimecode));
         if (data is null) return null;
 
+        var result = new ThumbnailResult(data, TruncateToSecond(DateTime.UtcNow));
+
         EvictIfNeeded();
-        Cache[videoId] = data;
-        return new ThumbnailResult(data, DateTime.UtcNow);
+        Cache[videoId] = result;
+        return result;
     }
 
     public async Task<ThumbnailResult?> GetThumbnailPreviewAsync(string videoId, double timecode)
@@ -70,7 +72,13 @@ public class ThumbnailService : IThumbnailService
         var data = await Task.Run(() => ExtractFrame(videoPath, timecode));
         if (data is null) return null;
 
-        return new ThumbnailResult(data, DateTime.UtcNow);
+        return new ThumbnailResult(data, TruncateToSecond(DateTime.UtcNow));
+    }
+
+    private static DateTime TruncateToSecond(DateTime value)
+    {
+        var ticks = value.Ticks;
+        return new DateTime(ticks - ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
     }
 
     private static void EvictIfNeeded()
