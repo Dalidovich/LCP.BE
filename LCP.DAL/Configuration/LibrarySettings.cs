@@ -18,6 +18,7 @@ public class LibrarySettings
     public long PreviewCacheBytes { get; set; } = 512L * 1024 * 1024;
     public int FfmpegProbeTimeoutSeconds { get; set; } = 30;
     public int FfmpegConvertTimeoutSeconds { get; set; } = 300;
+    public long MaxUploadBytes { get; set; } = 64L * 1024 * 1024 * 1024;
 
     public string ResolveSystemFilePath(string relativePath)
     {

@@ -48,14 +48,8 @@ public class LibrarySyncService : ILibrarySyncService
 
         CreateBackup();
 
-        var videoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".mp4", ".mkv", ".avi", ".mov", ".wmv",
-            ".flv", ".webm", ".m4v", ".ts"
-        };
-
         var filesOnDisk = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
-            .Where(f => videoExtensions.Contains(Path.GetExtension(f)))
+            .Where(f => VideoFileExtensions.Supported.Contains(Path.GetExtension(f)))
             .Select(f => LibraryPath.Normalize(Path.GetRelativePath(rootPath, f)))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

@@ -185,7 +185,8 @@ public class Program
             nameof(LibrarySettings.ThumbnailCacheBytes),
             nameof(LibrarySettings.PreviewCacheBytes),
             nameof(LibrarySettings.FfmpegProbeTimeoutSeconds),
-            nameof(LibrarySettings.FfmpegConvertTimeoutSeconds)
+            nameof(LibrarySettings.FfmpegConvertTimeoutSeconds),
+            nameof(LibrarySettings.MaxUploadBytes)
         };
 
         foreach (var prop in typeof(LibrarySettings).GetProperties())

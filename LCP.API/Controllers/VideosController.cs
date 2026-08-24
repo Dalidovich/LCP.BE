@@ -1,7 +1,9 @@
 ﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
+using LCP.DAL.Configuration;
 using LCP.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace LCP.API.Controllers;
 
@@ -15,7 +17,9 @@ public class VideosController : ControllerBase
     private readonly IMediaWarmupService _warmupService;
     private readonly ITagService _tagService;
     private readonly IProductionInfoService _productionInfoService;
+    private readonly LibrarySettings _settings;
     private const string CacheControlValue = "private, max-age=0, must-revalidate";
+    private const long HardUploadLimitBytes = 200L * 1024 * 1024 * 1024;
 
     public VideosController(
         IVideoService videoService,
@@ -23,8 +27,10 @@ public class VideosController : ControllerBase
         IPreviewService previewService,
         IMediaWarmupService warmupService,
         ITagService tagService,
-        IProductionInfoService productionInfoService)
+        IProductionInfoService productionInfoService,
+        IOptions<LibrarySettings> settings)
     {
+        _settings = settings.Value;
         _videoService = videoService;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
@@ -70,16 +76,23 @@ public class VideosController : ControllerBase
     }
 
     [HttpPost("new")]
-    [DisableRequestSizeLimit]
-    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
+    [RequestSizeLimit(HardUploadLimitBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = HardUploadLimitBytes)]
     public async Task<ActionResult<VideoDto>> Add(IFormFile file)
     {
         if (file is null || file.Length == 0)
-            return BadRequest("No file provided");
+            return BadRequest(new { error = "No file provided" });
+
+        if (file.Length > _settings.MaxUploadBytes)
+            return BadRequest(new { error = "File exceeds the maximum allowed size" });
+
+        var ext = Path.GetExtension(file.FileName);
+        if (!VideoFileExtensions.Supported.Contains(ext))
+            return BadRequest(new { error = "Unsupported file type" });
 
         await using var stream = file.OpenReadStream();
         var video = await _videoService.AddVideoFileAsync(file.FileName, stream);
-        if (video is null) return BadRequest("Failed to add video");
+        if (video is null) return BadRequest(new { error = "Failed to add video" });
         return CreatedAtAction(nameof(GetById), new { id = video.Id }, video);
     }
 

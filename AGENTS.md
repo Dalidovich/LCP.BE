@@ -55,6 +55,10 @@ Static methods:
 enum VideoType { Anime = 0, Film = 1 }
 ```
 
+### `VideoFileExtensions` (LCP.Domain/Entities/)
+
+Static `IReadOnlySet<string> Supported` (`OrdinalIgnoreCase`): `.mp4 .mkv .avi .mov .wmv .flv .webm .m4v .ts`. Single source of truth for which files count as videos — consumed by `LibrarySyncService`, `LibraryStartupService` and the upload endpoint. `VideosController.GetContentType` keeps its own extension→MIME map, a separate concern.
+
 ### `SiteSettings` (LCP.Domain/Entities/)
 ```csharp
 class SiteSettings {
@@ -120,7 +124,8 @@ class SiteSettings {
     "SmartVideoGrouping": false,
     "MaxSyncDeletionRatio": 0.5,
     "ThumbnailCacheBytes": 67108864,
-    "PreviewCacheBytes": 536870912
+    "PreviewCacheBytes": 536870912,
+    "MaxUploadBytes": 68719476736
   }
 }
 ```
@@ -130,6 +135,7 @@ class SiteSettings {
 - `PasswordHash` / `PasswordSalt` — optional; base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`. When either is empty the password gate is disabled: the fallback policy is satisfied without a session, `check-password` and `session` return `true`, and the frontend skips the prompt. Set both to require a login. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`. When `SHARED_CONFIG_PATH` is used, `ValidateSharedConfig` requires both to be non-empty
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
 - `MaxSyncDeletionRatio` — optional (default `0.5`); fraction of entries sync may prune in one pass. Above it, pruning is skipped and logged at error level. Ignored for libraries with fewer than 10 entries and for values outside `(0, 1)`. Exempt from the `ValidateSharedConfig` presence check
+- `MaxUploadBytes` — optional (default `68719476736`, 64 GB); largest file `POST /api/videos/new` accepts. The action attributes cap the request at a hard 200 GB ceiling; this value is enforced inside the action against `IFormFile.Length`. Exempt from the `ValidateSharedConfig` presence check
 - `ThumbnailCacheBytes` / `PreviewCacheBytes` — optional (defaults `67108864` / `536870912`); byte budgets for the in-memory thumbnail and preview LRU caches. Non-positive values are clamped to 1 byte, which still keeps a single entry resident. Exempt from the `ValidateSharedConfig` presence check
 
 ## DTOs (LCP.BLL/DTOs/)
@@ -171,7 +177,7 @@ class SiteSettings {
 | POST | `/api/settings/logout` | Clear the session cookie |
 | GET | `/api/settings/session` | Whether the caller is authenticated, or `true` when the gate is disabled. `[AllowAnonymous]` |
 | GET | `/api/videos/random` | Return a random video |
-| POST | `/api/videos/new` | Upload a new video file (`IFormFile`, no size limit) |
+| POST | `/api/videos/new` | Upload a new video file (`IFormFile`). Rejects extensions outside `VideoFileExtensions.Supported` and files larger than `LibrarySettings.MaxUploadBytes`, both with `400 {"error": "..."}` |
 | GET | `/api/production-info` | List all studios |
 | GET | `/api/production-info/info` | Detailed production info with video counts |
 | POST | `/api/production-info` | Add a studio (body: plain string) |

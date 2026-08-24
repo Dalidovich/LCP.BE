@@ -9,12 +9,6 @@ namespace LCP.API.BackgroundServices;
 
 public class LibraryStartupService : BackgroundService
 {
-    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".mp4", ".mkv", ".avi", ".mov", ".wmv",
-        ".flv", ".webm", ".m4v", ".ts"
-    };
-
     private readonly IVideoRepository _videoRepository;
     private readonly ITagRepository _tagRepository;
     private readonly IProductionInfoRepository _productionInfoRepository;
@@ -143,7 +137,7 @@ public class LibraryStartupService : BackgroundService
         _logger.LogInformation("Scanning {RootPath} for video files", rootPath);
 
         var files = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
-            .Where(f => VideoExtensions.Contains(Path.GetExtension(f)));
+            .Where(f => VideoFileExtensions.Supported.Contains(Path.GetExtension(f)));
 
         var videos = new List<VideoMetadata>();
         foreach (var file in files)
