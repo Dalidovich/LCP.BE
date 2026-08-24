@@ -20,11 +20,25 @@ public class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation("Client aborted the request {Method} {Path}",
+                context.Request.Method, context.Request.Path);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception occurred while processing {Method} {Path}",
                 context.Request.Method, context.Request.Path);
 
+            if (context.Response.HasStarted)
+            {
+                _logger.LogWarning("Response for {Method} {Path} had already started; aborting the connection",
+                    context.Request.Method, context.Request.Path);
+                context.Abort();
+                return;
+            }
+
+            context.Response.Clear();
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             context.Response.ContentType = "application/json";
 
