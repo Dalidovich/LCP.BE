@@ -84,9 +84,15 @@ public class TagService : ITagService
 
     public async Task<bool> ExistsAllAsync(List<string> tags)
     {
+        var unknown = await GetUnknownAsync(tags);
+        return unknown.Count == 0;
+    }
+
+    public async Task<List<string>> GetUnknownAsync(List<string> tags)
+    {
         var masterTags = await _repository.GetAllAsync();
         var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
-        return tags.All(t => masterSet.Contains(t.ToLowerInvariant()));
+        return tags.Where(t => !masterSet.Contains(t.ToLowerInvariant())).ToList();
     }
 
     public async Task<bool> RemoveAsync(string tag)

@@ -1,4 +1,4 @@
-﻿using LCP.BLL.DTOs;
+using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.Domain.Entities;
@@ -56,11 +56,14 @@ public class VideosController : ControllerBase
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 20;
 
-        if (tags is { Count: > 0 } && !await _tagService.ExistsAllAsync(tags))
-            return BadRequest();
+        var unknownFilters = new List<string>();
+        if (tags is { Count: > 0 })
+            unknownFilters.AddRange(await _tagService.GetUnknownAsync(tags));
+        if (productionInfo is { Count: > 0 })
+            unknownFilters.AddRange(await _productionInfoService.GetUnknownAsync(productionInfo));
 
-        if (productionInfo is { Count: > 0 } && !await _productionInfoService.ExistsAllAsync(productionInfo))
-            return BadRequest();
+        if (unknownFilters.Count > 0)
+            return BadRequest(new { error = "Unknown filter values", unknown = unknownFilters });
 
         var result = await _videoService.GetPagedAsync(page, pageSize, tags, productionInfo, search);
         _warmupService.QueueWarm(result.Items.Select(v => v.Id).ToList(), HttpContext.RequestAborted);

@@ -87,9 +87,15 @@ public class ProductionInfoService : IProductionInfoService
 
     public async Task<bool> ExistsAllAsync(List<string> studios)
     {
+        var unknown = await GetUnknownAsync(studios);
+        return unknown.Count == 0;
+    }
+
+    public async Task<List<string>> GetUnknownAsync(List<string> studios)
+    {
         var masterStudios = await _repository.GetAllAsync();
         var masterSet = masterStudios.Select(t => t.ToLowerInvariant()).ToHashSet();
-        return studios.All(t => masterSet.Contains(t.ToLowerInvariant()));
+        return studios.Where(t => !masterSet.Contains(t.ToLowerInvariant())).ToList();
     }
 
     public async Task<bool> RemoveAsync(string studio)

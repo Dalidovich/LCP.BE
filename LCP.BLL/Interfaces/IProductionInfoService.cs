@@ -11,4 +11,5 @@ public interface IProductionInfoService
     Task AddAsync(string studio);
     Task<bool> RemoveAsync(string studio);
     Task<bool> ExistsAllAsync(List<string> studios);
+    Task<List<string>> GetUnknownAsync(List<string> studios);
 }
