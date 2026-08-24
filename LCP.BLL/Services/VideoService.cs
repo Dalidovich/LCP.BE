@@ -198,40 +198,43 @@ public class VideoService : IVideoService
 
     public async Task<VideoDto?> UpdateAsync(string id, UpdateVideoRequest request)
     {
-        var allEntries = await _repository.GetAllRawAsync();
-        var entry = allEntries.FirstOrDefault(v => v.Id == id);
-        if (entry is null) return null;
+        var updated = await _repository.MutateAsync(entries =>
+        {
+            var entry = entries.FirstOrDefault(v => v.Id == id);
+            if (entry is null) return (false, (VideoMetadata?)null);
 
-        if (request.NameEn is not null)
-            entry.NameEn = request.NameEn;
-        if (request.NameLocal is not null)
-            entry.NameLocal = request.NameLocal;
-        if (request.CollectionId is not null)
-            entry.CollectionId = request.CollectionId;
-        if (request.EpisodeNumber is not null)
-            entry.EpisodeNumber = request.EpisodeNumber.Value;
-        if (request.Type is not null)
-            entry.Type = request.Type.Value;
+            if (request.NameEn is not null)
+                entry.NameEn = request.NameEn;
+            if (request.NameLocal is not null)
+                entry.NameLocal = request.NameLocal;
+            if (request.CollectionId is not null)
+                entry.CollectionId = request.CollectionId;
+            if (request.EpisodeNumber is not null)
+                entry.EpisodeNumber = request.EpisodeNumber.Value;
+            if (request.Type is not null)
+                entry.Type = request.Type.Value;
+            if (request.Tags is not null)
+                entry.Tags = request.Tags;
+            if (request.ProductionInfo is not null)
+                entry.ProductionInfo = request.ProductionInfo;
+            if (request.ThumbnailTimecode is not null)
+                entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
+            if (request.LastTimeWatched is not null)
+                entry.LastTimeWatched = request.LastTimeWatched;
+
+            return (true, (VideoMetadata?)entry.Clone());
+        });
+
+        if (updated is null) return null;
+
         if (request.Tags is not null)
-        {
-            entry.Tags = request.Tags;
             _tagService.InvalidateInfoCache();
-        }
         if (request.ProductionInfo is not null)
-        {
-            entry.ProductionInfo = request.ProductionInfo;
             _productionInfoService.InvalidateInfoCache();
-        }
         if (request.ThumbnailTimecode is not null)
-        {
-            entry.ThumbnailTimecode = request.ThumbnailTimecode.Value;
             _thumbnailService.InvalidateCache(id);
-        }
-        if (request.LastTimeWatched is not null)
-            entry.LastTimeWatched = request.LastTimeWatched;
 
-        await _repository.SaveAllAsync(allEntries);
-        return MapToDto(entry);
+        return MapToDto(updated);
     }
 
     public async Task<string?> ResolveFilePathAsync(string id)
@@ -245,14 +248,19 @@ public class VideoService : IVideoService
 
     public async Task<VideoDto?> RegenerateSlicesAsync(string id)
     {
-        var allEntries = await _repository.GetAllRawAsync();
-        var entry = allEntries.FirstOrDefault(v => v.Id == id);
-        if (entry is null) return null;
+        var updated = await _repository.MutateAsync(entries =>
+        {
+            var entry = entries.FirstOrDefault(v => v.Id == id);
+            if (entry is null) return (false, (VideoMetadata?)null);
 
-        entry.PreviewSlices = PreviewSlice.CalculateRandomSlices(entry.Duration);
+            entry.PreviewSlices = PreviewSlice.CalculateRandomSlices(entry.Duration);
+            return (true, (VideoMetadata?)entry.Clone());
+        });
+
+        if (updated is null) return null;
+
         _previewService.InvalidateCache(id);
-        await _repository.SaveAllAsync(allEntries);
-        return MapToDto(entry);
+        return MapToDto(updated);
     }
 
     public async Task<VideoDto?> AddVideoFileAsync(string fileName, Stream content)
@@ -287,9 +295,11 @@ public class VideoService : IVideoService
             PreviewSlices = PreviewSlice.CalculateSlices(duration)
         };
 
-        var allEntries = await _repository.GetAllRawAsync();
-        allEntries.Add(entry);
-        await _repository.SaveAllAsync(allEntries);
+        await _repository.MutateAsync<object?>(entries =>
+        {
+            entries.Add(entry.Clone());
+            return (true, null);
+        });
 
         return MapToDto(entry);
     }

@@ -16,9 +16,11 @@ public class SmartGroupingService : ISmartGroupingService
 
     private const string DefaultGroup = "default";
 
-    public async Task GroupVideosAsync()
+    public Task GroupVideosAsync() =>
+        _repository.MutateAsync<object?>(allEntries => (Group(allEntries), null));
+
+    private static bool Group(List<VideoMetadata> allEntries)
     {
-        var allEntries = await _repository.GetAllRawAsync();
         var changed = false;
 
         var dict = new Dictionary<string, List<VideoMetadata>>(StringComparer.OrdinalIgnoreCase);
@@ -95,8 +97,7 @@ public class SmartGroupingService : ISmartGroupingService
             changed = true;
         }
 
-        if (changed)
-            await _repository.SaveAllAsync(allEntries);
+        return changed;
     }
 
     private static string CleanName(string systemName)

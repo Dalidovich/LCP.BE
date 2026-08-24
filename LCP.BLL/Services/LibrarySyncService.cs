@@ -54,98 +54,102 @@ public class LibrarySyncService : ILibrarySyncService
             ".flv", ".webm", ".m4v", ".ts"
         };
 
-        var allEntries = await _repository.GetAllRawAsync();
-        var changed = false;
-
         var filesOnDisk = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
             .Where(f => videoExtensions.Contains(Path.GetExtension(f)))
             .Select(f => LibraryPath.Normalize(Path.GetRelativePath(rootPath, f)))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var missingEntries = allEntries
-            .Where(e => !File.Exists(LibraryPath.Combine(rootPath, e.RelativePath)))
-            .ToList();
-
-        if (missingEntries.Count > 0)
-        {
-            if (IsMassDeletion(missingEntries.Count, allEntries.Count))
-            {
-                _logger.LogError(
-                    "Sync pruning aborted: {MissingCount} of {TotalCount} entries have no file on disk " +
-                    "({Ratio:P0}), which exceeds MaxSyncDeletionRatio {Threshold:P0}. " +
-                    "Library root '{RootPath}' may be unavailable. Metadata left untouched.",
-                    missingEntries.Count, allEntries.Count,
-                    (double)missingEntries.Count / allEntries.Count,
-                    _settings.MaxSyncDeletionRatio, rootPath);
-            }
-            else
-            {
-                var missingSet = missingEntries.ToHashSet();
-                allEntries.RemoveAll(missingSet.Contains);
-                changed = true;
-            }
-        }
-
-        foreach (var entry in allEntries)
-        {
-            if (entry.PreviewSlices.Count == 0)
-            {
-                entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
-                changed = true;
-            }
-        }
-
-        var trackedPaths = allEntries
+        var snapshot = await _repository.GetAllRawAsync();
+        var knownPaths = snapshot
             .Select(e => LibraryPath.Normalize(e.RelativePath))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var relativePath in filesOnDisk)
+        var probedDurations = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var relativePath in filesOnDisk.Where(p => !knownPaths.Contains(p)))
         {
-            if (trackedPaths.Contains(relativePath)) continue;
-
-            var fullPath = LibraryPath.Combine(rootPath, relativePath);
-            var duration = _videoProcessing.ProbeDuration(fullPath);
-            allEntries.Add(new VideoMetadata
-            {
-                Id = Guid.NewGuid().ToString(),
-                RelativePath = relativePath,
-                SystemName = Path.GetFileNameWithoutExtension(relativePath),
-                Duration = duration,
-                PreviewSlices = PreviewSlice.CalculateSlices(duration)
-            });
-            changed = true;
-        }
-
-        if (changed)
-        {
-            await _repository.SaveAllAsync(allEntries);
+            probedDurations[relativePath] = _videoProcessing.ProbeDuration(
+                LibraryPath.Combine(rootPath, relativePath));
         }
 
         var masterTags = await _tagRepository.GetAllAsync();
-        var masterSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
-        var tagChanged = false;
-        foreach (var entry in allEntries)
-        {
-            var removed = entry.Tags.RemoveAll(t => !masterSet.Contains(t.ToLowerInvariant()));
-            if (removed > 0) tagChanged = true;
-        }
-        if (tagChanged)
-        {
-            await _repository.SaveAllAsync(allEntries);
-        }
+        var masterTagSet = masterTags.Select(t => t.ToLowerInvariant()).ToHashSet();
 
         var masterStudios = await _productionInfoRepository.GetAllAsync();
         var masterStudioSet = masterStudios.Select(t => t.ToLowerInvariant()).ToHashSet();
-        var studioChanged = false;
-        foreach (var entry in allEntries)
+
+        await _repository.MutateAsync<object?>(allEntries =>
         {
-            var removed = entry.ProductionInfo.RemoveAll(t => !masterStudioSet.Contains(t.ToLowerInvariant()));
-            if (removed > 0) studioChanged = true;
-        }
-        if (studioChanged)
-        {
-            await _repository.SaveAllAsync(allEntries);
-        }
+            var changed = false;
+
+            var missingEntries = allEntries
+                .Where(e => !File.Exists(LibraryPath.Combine(rootPath, e.RelativePath)))
+                .ToList();
+
+            if (missingEntries.Count > 0)
+            {
+                if (IsMassDeletion(missingEntries.Count, allEntries.Count))
+                {
+                    _logger.LogError(
+                        "Sync pruning aborted: {MissingCount} of {TotalCount} entries have no file on disk " +
+                        "({Ratio:P0}), which exceeds MaxSyncDeletionRatio {Threshold:P0}. " +
+                        "Library root '{RootPath}' may be unavailable. Metadata left untouched.",
+                        missingEntries.Count, allEntries.Count,
+                        (double)missingEntries.Count / allEntries.Count,
+                        _settings.MaxSyncDeletionRatio, rootPath);
+                }
+                else
+                {
+                    var missingSet = missingEntries.ToHashSet();
+                    allEntries.RemoveAll(missingSet.Contains);
+                    changed = true;
+                }
+            }
+
+            foreach (var entry in allEntries)
+            {
+                if (entry.PreviewSlices.Count == 0)
+                {
+                    entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
+                    changed = true;
+                }
+            }
+
+            var trackedPaths = allEntries
+                .Select(e => LibraryPath.Normalize(e.RelativePath))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var relativePath in filesOnDisk)
+            {
+                if (trackedPaths.Contains(relativePath)) continue;
+
+                if (!probedDurations.TryGetValue(relativePath, out var duration))
+                {
+                    duration = _videoProcessing.ProbeDuration(
+                        LibraryPath.Combine(rootPath, relativePath));
+                }
+
+                allEntries.Add(new VideoMetadata
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    RelativePath = relativePath,
+                    SystemName = Path.GetFileNameWithoutExtension(relativePath),
+                    Duration = duration,
+                    PreviewSlices = PreviewSlice.CalculateSlices(duration)
+                });
+                changed = true;
+            }
+
+            foreach (var entry in allEntries)
+            {
+                var removedTags = entry.Tags.RemoveAll(t => !masterTagSet.Contains(t.ToLowerInvariant()));
+                if (removedTags > 0) changed = true;
+
+                var removedStudios = entry.ProductionInfo.RemoveAll(t => !masterStudioSet.Contains(t.ToLowerInvariant()));
+                if (removedStudios > 0) changed = true;
+            }
+
+            return (changed, null);
+        });
 
         if (_settings.SmartVideoGrouping)
         {

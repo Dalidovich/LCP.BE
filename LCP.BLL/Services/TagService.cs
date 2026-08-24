@@ -94,18 +94,18 @@ public class TagService : ITagService
 
         await _repository.RemoveAsync(tag);
 
-        var allVideos = await _videoRepository.GetAllRawAsync();
-        var changed = false;
-        foreach (var video in allVideos)
+        var changed = await _videoRepository.MutateAsync(videos =>
         {
-            var removed = video.Tags.RemoveAll(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
-            if (removed > 0) changed = true;
-        }
-        if (changed)
-        {
-            await _videoRepository.SaveAllAsync(allVideos);
-            _cachedInfo = null;
-        }
+            var anyRemoved = false;
+            foreach (var video in videos)
+            {
+                var removed = video.Tags.RemoveAll(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+                if (removed > 0) anyRemoved = true;
+            }
+            return (anyRemoved, anyRemoved);
+        });
+
+        if (changed) _cachedInfo = null;
 
         return true;
     }

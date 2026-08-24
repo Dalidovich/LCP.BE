@@ -129,6 +129,25 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
+    public async Task<T> MutateAsync<T>(Func<List<VideoMetadata>, (bool Changed, T Result)> mutation)
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            _cache ??= await LoadAsync();
+            var (changed, result) = mutation(_cache);
+            if (changed)
+            {
+                await SaveAsync(_cache);
+            }
+            return result;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     public Task InvalidateCacheAsync()
     {
         _lock.Wait();

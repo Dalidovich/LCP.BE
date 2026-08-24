@@ -10,5 +10,6 @@ public interface IVideoRepository
     Task<List<(string Id, int Count)>> GetAllCollectionIdsAsync();
     Task<(List<VideoMetadata> Items, int TotalCount)> GetPagedAsync(int page, int pageSize);
     Task SaveAllAsync(List<VideoMetadata> videos);
+    Task<T> MutateAsync<T>(Func<List<VideoMetadata>, (bool Changed, T Result)> mutation);
     Task InvalidateCacheAsync();
 }
