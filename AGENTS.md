@@ -226,7 +226,7 @@ All videos are included in grouping logic.
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory keyed by `{id}_{resolution}`. Single-slice previews use direct conversion without temp files.
 - **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
-- **CORS** — configured to allow any origin (for local web player)
+- **CORS** — restricted to an explicit origin list from `Cors:AllowedOrigins` (defaults to `http://localhost:4200` when absent or empty); any header/method allowed, credentials allowed. Both supported deployments are same-origin (dev proxy via `LCP.FE/proxy.conf.json`, prod SPA served from `wwwroot`), so no wildcard origin is needed
 - **Global error handling** — `ExceptionHandlingMiddleware` catches unhandled exceptions, logs them with path/method, returns JSON `{ error, statusCode }` with 500. If the response has already started (streaming endpoints: export, video stream/preview), it logs and calls `context.Abort()` instead of writing — the client sees a broken transfer rather than a truncated body with `200 OK`. Client disconnects (`OperationCanceledException` with `RequestAborted`) are logged at information level, not as errors
 - **Logging** — Serilog to console only (no file output)
 - **Nullable enabled** — follow `?` annotations for nullable reference types

@@ -60,13 +60,21 @@ public class Program
             builder.Services.AddHostedService<LibrarySeedService>();
             builder.Services.AddHostedService<LibrarySyncBackgroundService>();
 
+            var allowedOrigins = builder.Configuration
+                .GetSection("Cors:AllowedOrigins")
+                .Get<string[]>();
+
+            if (allowedOrigins == null || allowedOrigins.Length == 0)
+                allowedOrigins = ["http://localhost:4200"];
+
             builder.Services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>
                 {
-                    policy.AllowAnyOrigin()
+                    policy.WithOrigins(allowedOrigins)
                           .AllowAnyHeader()
-                          .AllowAnyMethod();
+                          .AllowAnyMethod()
+                          .AllowCredentials();
                 });
             });
 
