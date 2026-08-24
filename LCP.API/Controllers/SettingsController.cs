@@ -1,4 +1,5 @@
 ﻿using LCP.BLL.DTOs;
+using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using Microsoft.AspNetCore.Authentication;
@@ -40,11 +41,10 @@ public class SettingsController : ControllerBase
     [HttpPost("check-password")]
     public async Task<ActionResult<bool>> CheckPassword([FromBody] PasswordRequest request)
     {
-        var stored = _settings.Value.Password;
-        if (string.IsNullOrEmpty(stored))
+        if (string.IsNullOrEmpty(request.Password))
             return Unauthorized();
 
-        if (!string.Equals(request.Password, stored, StringComparison.Ordinal))
+        if (!PasswordHasher.Verify(request.Password, _settings.Value.PasswordHash, _settings.Value.PasswordSalt))
             return Unauthorized();
 
         var identity = new ClaimsIdentity(
@@ -56,6 +56,21 @@ public class SettingsController : ControllerBase
             new ClaimsPrincipal(identity));
 
         return Ok(true);
+    }
+
+    [HttpPost("hash-password")]
+    public ActionResult<HashedPasswordDto> HashPassword(
+        [FromBody] PasswordRequest request,
+        [FromServices] IWebHostEnvironment environment)
+    {
+        if (!environment.IsDevelopment())
+            return NotFound();
+
+        if (string.IsNullOrEmpty(request.Password))
+            return BadRequest();
+
+        var hash = PasswordHasher.Hash(request.Password, out var salt);
+        return new HashedPasswordDto(hash, salt);
     }
 
     [HttpPost("logout")]

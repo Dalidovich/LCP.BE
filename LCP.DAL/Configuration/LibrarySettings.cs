@@ -10,7 +10,8 @@ public class LibrarySettings
     public const string SettingsFileName = "settings.json";
 
     public string LibraryRootPath { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string PasswordSalt { get; set; } = string.Empty;
     public bool SmartVideoGrouping { get; set; }
 
     public string ResolveSystemFilePath(string relativePath)
