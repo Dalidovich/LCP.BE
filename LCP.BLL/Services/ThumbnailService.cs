@@ -3,6 +3,7 @@ using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
+using LCP.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -47,7 +48,7 @@ public class ThumbnailService : IThumbnailService
         var video = await _repository.GetByIdAsync(videoId);
         if (video is null) return null;
 
-        var videoPath = Path.Combine(_libraryRootPath, video.RelativePath);
+        var videoPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
         if (!File.Exists(videoPath)) return null;
 
         var data = await Task.Run(() => ExtractFrame(videoPath, video.ThumbnailTimecode));
@@ -63,7 +64,7 @@ public class ThumbnailService : IThumbnailService
         var video = await _repository.GetByIdAsync(videoId);
         if (video is null) return null;
 
-        var videoPath = Path.Combine(_libraryRootPath, video.RelativePath);
+        var videoPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
         if (!File.Exists(videoPath)) return null;
 
         var data = await Task.Run(() => ExtractFrame(videoPath, timecode));

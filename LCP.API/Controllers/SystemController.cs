@@ -2,6 +2,7 @@
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
+using LCP.Domain;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -62,7 +63,7 @@ public class SystemController : ControllerBase
         var videoCount = 0;
         foreach (var v in videos)
         {
-            var path = Path.Combine(_libraryRootPath, v.RelativePath);
+            var path = LibraryPath.Combine(_libraryRootPath, v.RelativePath);
             var fi = new FileInfo(path);
             if (!fi.Exists) continue;
             videoBytes += fi.Length;
@@ -127,10 +128,10 @@ public class SystemController : ControllerBase
         foreach (var video in videos)
         {
             ct.ThrowIfCancellationRequested();
-            var videoPath = Path.Combine(_libraryRootPath, video.RelativePath);
+            var videoPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
             if (!System.IO.File.Exists(videoPath)) continue;
 
-            var entry = archive.CreateEntry(video.RelativePath, CompressionLevel.NoCompression);
+            var entry = archive.CreateEntry(LibraryPath.ToArchiveEntryName(video.RelativePath), CompressionLevel.NoCompression);
             using var entryStream = entry.Open();
             using var fileStream = System.IO.File.OpenRead(videoPath);
             await fileStream.CopyToAsync(entryStream, ct);

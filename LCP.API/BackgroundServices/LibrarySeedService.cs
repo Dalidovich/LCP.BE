@@ -1,6 +1,7 @@
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
+using LCP.Domain;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Options;
 
@@ -100,7 +101,7 @@ public class LibrarySeedService : IHostedService
         var videos = new List<VideoMetadata>();
         foreach (var file in files)
         {
-            var relativePath = Path.GetRelativePath(rootPath, file);
+            var relativePath = LibraryPath.Normalize(Path.GetRelativePath(rootPath, file));
             var duration = _videoProcessing.ProbeDuration(file);
             videos.Add(new VideoMetadata
             {

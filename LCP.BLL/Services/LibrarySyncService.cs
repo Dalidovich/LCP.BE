@@ -2,6 +2,7 @@ using System.Text.Json;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
+using LCP.Domain;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -58,11 +59,11 @@ public class LibrarySyncService : ILibrarySyncService
 
         var filesOnDisk = Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories)
             .Where(f => videoExtensions.Contains(Path.GetExtension(f)))
-            .Select(f => Path.GetRelativePath(rootPath, f))
+            .Select(f => LibraryPath.Normalize(Path.GetRelativePath(rootPath, f)))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var missingEntries = allEntries
-            .Where(e => !File.Exists(Path.Combine(rootPath, e.RelativePath)))
+            .Where(e => !File.Exists(LibraryPath.Combine(rootPath, e.RelativePath)))
             .ToList();
 
         if (missingEntries.Count > 0)
@@ -95,14 +96,14 @@ public class LibrarySyncService : ILibrarySyncService
         }
 
         var trackedPaths = allEntries
-            .Select(e => e.RelativePath.Replace('/', '\\'))
+            .Select(e => LibraryPath.Normalize(e.RelativePath))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var relativePath in filesOnDisk)
         {
-            if (trackedPaths.Contains(relativePath.Replace('/', '\\'))) continue;
+            if (trackedPaths.Contains(relativePath)) continue;
 
-            var fullPath = Path.Combine(rootPath, relativePath);
+            var fullPath = LibraryPath.Combine(rootPath, relativePath);
             var duration = _videoProcessing.ProbeDuration(fullPath);
             allEntries.Add(new VideoMetadata
             {

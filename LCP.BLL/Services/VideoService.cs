@@ -3,6 +3,7 @@ using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
+using LCP.Domain;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Options;
 
@@ -238,7 +239,7 @@ public class VideoService : IVideoService
         var video = await _repository.GetByIdAsync(id);
         if (video is null) return null;
 
-        var fullPath = Path.Combine(_libraryRootPath, video.RelativePath);
+        var fullPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
         return File.Exists(fullPath) ? fullPath : null;
     }
 
