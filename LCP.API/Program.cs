@@ -1,4 +1,5 @@
-﻿using LCP.API.BackgroundServices;
+﻿using LCP.API.Authorization;
+using LCP.API.BackgroundServices;
 using LCP.API.Middleware;
 using LCP.BLL.Interfaces;
 using LCP.BLL.Services;
@@ -65,9 +66,11 @@ public class Program
                     };
                 });
 
+            builder.Services.AddSingleton<IAuthorizationHandler, PasswordGateHandler>();
+
             builder.Services.AddAuthorizationBuilder()
                 .SetFallbackPolicy(new AuthorizationPolicyBuilder()
-                    .RequireAuthenticatedUser()
+                    .AddRequirements(new PasswordGateRequirement())
                     .Build());
 
             builder.Services.Configure<LibrarySettings>(

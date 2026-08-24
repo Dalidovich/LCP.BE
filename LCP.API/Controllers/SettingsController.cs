@@ -38,9 +38,19 @@ public class SettingsController : ControllerBase
     }
 
     [AllowAnonymous]
+    [HttpGet("gate-enabled")]
+    public ActionResult<bool> GateEnabled()
+    {
+        return PasswordGate.IsEnabled(_settings.Value);
+    }
+
+    [AllowAnonymous]
     [HttpPost("check-password")]
     public async Task<ActionResult<bool>> CheckPassword([FromBody] PasswordRequest request)
     {
+        if (!PasswordGate.IsEnabled(_settings.Value))
+            return Ok(true);
+
         if (string.IsNullOrEmpty(request.Password))
             return Unauthorized();
 
@@ -84,6 +94,6 @@ public class SettingsController : ControllerBase
     [HttpGet("session")]
     public ActionResult<bool> Session()
     {
-        return User.Identity?.IsAuthenticated == true;
+        return !PasswordGate.IsEnabled(_settings.Value) || User.Identity?.IsAuthenticated == true;
     }
 }

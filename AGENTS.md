@@ -124,7 +124,7 @@ class SiteSettings {
 
 - System file names (`library.json`, `tags.json`, `settings.json`) are hardcoded constants in `LibrarySettings.cs` — resolved under `{LibraryRootPath}\SYSTEMFILES\` via `ResolveSystemFilePath()`
 - `LibraryRootPath` — root directory for video files. Full paths resolved as `LibraryRootPath + video.RelativePath`.
-- `PasswordHash` / `PasswordSalt` — base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`; an empty pair makes login impossible. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`. When `SHARED_CONFIG_PATH` is used, `ValidateSharedConfig` requires both to be non-empty
+- `PasswordHash` / `PasswordSalt` — optional; base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`. When either is empty the password gate is disabled: the fallback policy is satisfied without a session, `check-password` and `session` return `true`, and the frontend skips the prompt. Set both to require a login. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`. When `SHARED_CONFIG_PATH` is used, `ValidateSharedConfig` requires both to be non-empty
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
 
 ## DTOs (LCP.BLL/DTOs/)
@@ -160,10 +160,11 @@ class SiteSettings {
 | GET | `/api/collections/{collectionId}/videos?page=1&pageSize=20` | Paginated videos in a collection |
 | GET | `/api/settings` | Get site settings (Theme, AnimeSpeedUp, WarmCache, Debug, StatisticsMode) |
 | PUT | `/api/settings` | Update site settings |
-| POST | `/api/settings/check-password` | Log in: verifies the password against `PasswordHash`/`PasswordSalt` and issues the session cookie. `[AllowAnonymous]` |
+| GET | `/api/settings/gate-enabled` | Whether a password gate is configured; never returns the hash, salt or its length. `[AllowAnonymous]` |
+| POST | `/api/settings/check-password` | Log in: verifies the password against `PasswordHash`/`PasswordSalt` and issues the session cookie; returns `true` without a cookie when the gate is disabled. `[AllowAnonymous]` |
 | POST | `/api/settings/hash-password` | Development only: returns `PasswordHash`/`PasswordSalt` for a submitted password; `404` in other environments. Requires authentication |
 | POST | `/api/settings/logout` | Clear the session cookie |
-| GET | `/api/settings/session` | Whether the caller is authenticated. `[AllowAnonymous]` |
+| GET | `/api/settings/session` | Whether the caller is authenticated, or `true` when the gate is disabled. `[AllowAnonymous]` |
 | GET | `/api/videos/random` | Return a random video |
 | POST | `/api/videos/new` | Upload a new video file (`IFormFile`, no size limit) |
 | GET | `/api/production-info` | List all studios |
@@ -236,8 +237,9 @@ All videos are included in grouping logic.
 - **Nullable enabled** — follow `?` annotations for nullable reference types
 - **No comments in code** — keep source files clean
 - **RandomSort** — when enabled, videos in `GET /api/videos`, `GET /api/videos/paged`, and `GET /api/collections/{id}/videos` are shuffled deterministically using a seed that persists per server start and regenerates when RandomSort is toggled off→on. This guarantees no duplicates or gaps across pagination requests since the order is stable for the same seed.
-- **Authentication** — cookie scheme (`lcp_session`, HttpOnly, SameSite=Lax, 7-day sliding expiration). A fallback authorization policy requires an authenticated user on every MVC endpoint, so new controllers are protected by default; only `check-password` and `session` opt out with `[AllowAnonymous]`. Unauthenticated API calls get `401`/`403` instead of a login redirect. Static files, the SPA fallback and Swagger are middleware and stay reachable
-- **Password check** — PBKDF2-SHA256 derivation compared with `CryptographicOperations.FixedTimeEquals` (`LCP.BLL/Helpers/PasswordHasher.cs`); returns `401` when it does not match or no hash is configured. Never store or compare a plain-text password
+- **Authentication** — cookie scheme (`lcp_session`, HttpOnly, SameSite=Lax, 7-day sliding expiration). A fallback authorization policy requires an authenticated user on every MVC endpoint, so new controllers are protected by default; only `gate-enabled`, `check-password` and `session` opt out with `[AllowAnonymous]`. Unauthenticated API calls get `401`/`403` instead of a login redirect. Static files, the SPA fallback and Swagger are middleware and stay reachable
+- **Password check** — PBKDF2-SHA256 derivation compared with `CryptographicOperations.FixedTimeEquals` (`LCP.BLL/Helpers/PasswordHasher.cs`); returns `401` when it does not match. Never store or compare a plain-text password
+- **Password gate** — `PasswordGate.IsEnabled` (`LCP.BLL/Helpers/PasswordGate.cs`) is the single source of truth for "is a password configured". The fallback policy is `PasswordGateRequirement`, satisfied by an authenticated user or by a disabled gate, so an unlocked UI and an open API always agree. Never disable the gate in the UI alone
 
 ## Build & Run
 
