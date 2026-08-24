@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -20,6 +20,7 @@ public class SystemController : ControllerBase
     private readonly IProductionInfoRepository _productionInfoRepository;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPreviewService _previewService;
+    private readonly ILogger<SystemController> _logger;
     private readonly string _libraryRootPath;
 
     public SystemController(
@@ -31,7 +32,8 @@ public class SystemController : ControllerBase
         IProductionInfoRepository productionInfoRepository,
         IThumbnailService thumbnailService,
         IPreviewService previewService,
-        IOptions<LibrarySettings> settings)
+        IOptions<LibrarySettings> settings,
+        ILogger<SystemController> logger)
     {
         _lifetime = lifetime;
         _videoService = videoService;
@@ -41,6 +43,7 @@ public class SystemController : ControllerBase
         _productionInfoRepository = productionInfoRepository;
         _thumbnailService = thumbnailService;
         _previewService = previewService;
+        _logger = logger;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
 
@@ -161,6 +164,8 @@ public class SystemController : ControllerBase
         // 2. Extract ZIP contents
         using var archive = new ZipArchive(file.OpenReadStream(), ZipArchiveMode.Read);
 
+        var extractionRoot = Path.GetFullPath(_libraryRootPath);
+
         foreach (var entry in archive.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -169,7 +174,13 @@ public class SystemController : ControllerBase
                 continue;
 
             var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-            var fullPath = Path.Combine(_libraryRootPath, entryPath);
+
+            if (!TryResolveEntryPath(extractionRoot, entryPath, out var fullPath))
+            {
+                _logger.LogWarning("Skipped archive entry outside library root: {EntryName}", entry.FullName);
+                continue;
+            }
+
             var entryDir = Path.GetDirectoryName(fullPath);
 
             if (!string.IsNullOrEmpty(entryDir) && !Directory.Exists(entryDir))
@@ -212,5 +223,30 @@ public class SystemController : ControllerBase
         _previewService.ClearAllCache();
 
         return Ok(new { message = "Import completed successfully" });
+    }
+
+    private static bool TryResolveEntryPath(string root, string entryPath, out string fullPath)
+    {
+        fullPath = string.Empty;
+
+        string resolved;
+        try
+        {
+            resolved = Path.GetFullPath(Path.Combine(root, entryPath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        fullPath = resolved;
+        return true;
     }
 }
