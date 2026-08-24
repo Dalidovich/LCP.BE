@@ -1,4 +1,4 @@
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
@@ -95,23 +95,7 @@ public class VideoService : IVideoService
 
         ordered = await FilterByTypeAsync(ordered);
 
-        if (tags is { Count: > 0 })
-        {
-            var tagSet = tags.Select(t => t.ToLowerInvariant()).ToHashSet();
-            ordered = ordered
-                .Where(v => v.Tags.Any(t => tagSet.Contains(t.ToLowerInvariant())))
-                .OrderByDescending(v => v.Tags.Count(t => tagSet.Contains(t.ToLowerInvariant())))
-                .ToList();
-        }
-
-        if (productionInfo is { Count: > 0 })
-        {
-            var piSet = productionInfo.Select(p => p.ToLowerInvariant()).ToHashSet();
-            ordered = ordered
-                .Where(v => v.ProductionInfo.Any(p => piSet.Contains(p.ToLowerInvariant())))
-                .OrderByDescending(v => v.ProductionInfo.Count(p => piSet.Contains(p.ToLowerInvariant())))
-                .ToList();
-        }
+        ordered = ApplyMatchFilters(ordered, tags, productionInfo, preserveExistingOrder: !string.IsNullOrWhiteSpace(search));
 
         var totalCount = ordered.Count;
         var items = ordered
@@ -443,6 +427,34 @@ public class VideoService : IVideoService
 
         var filterSet = settings.VideoTypeFilter.ToHashSet();
         return videos.Where(v => filterSet.Contains(v.Type)).ToList();
+    }
+
+    private static List<VideoMetadata> ApplyMatchFilters(
+        List<VideoMetadata> videos,
+        List<string>? tags,
+        List<string>? productionInfo,
+        bool preserveExistingOrder)
+    {
+        var tagSet = tags is { Count: > 0 } ? tags.Select(t => t.ToLowerInvariant()).ToHashSet() : null;
+        var productionInfoSet = productionInfo is { Count: > 0 } ? productionInfo.Select(p => p.ToLowerInvariant()).ToHashSet() : null;
+
+        if (tagSet is null && productionInfoSet is null) return videos;
+
+        var scored = videos
+            .Select(v => new
+            {
+                Video = v,
+                TagMatches = tagSet is null ? 0 : v.Tags.Count(t => tagSet.Contains(t.ToLowerInvariant())),
+                ProductionInfoMatches = productionInfoSet is null ? 0 : v.ProductionInfo.Count(p => productionInfoSet.Contains(p.ToLowerInvariant()))
+            })
+            .Where(x => (tagSet is null || x.TagMatches > 0) && (productionInfoSet is null || x.ProductionInfoMatches > 0));
+
+        if (!preserveExistingOrder)
+        {
+            scored = scored.OrderByDescending(x => x.TagMatches + x.ProductionInfoMatches);
+        }
+
+        return scored.Select(x => x.Video).ToList();
     }
 
     private async Task<List<VideoMetadata>> ApplyOrderingAsync(List<VideoMetadata> videos)
