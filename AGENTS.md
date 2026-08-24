@@ -47,8 +47,9 @@ class PreviewSlice {
 ```
 
 Static methods:
-- `CalculateSlices(double duration)` — evenly distributes 5 × 5s segments with 10s margin at start, 5s at end
-- `CalculateRandomSlices(double duration)` — same count but randomizes each slice start within zones; used by `POST /regenerate-slices`
+- `CalculateSlices(double duration)` — evenly distributes 5 × 5s segments with up to 10s margin at start, 5s at end; margins shrink proportionally when the duration cannot afford them, the gap never goes negative (slices abut at worst) and the trailing slice is shortened so no slice runs past the end
+- `CalculateRandomSlices(double duration)` — same count and same margin clamping, but randomizes each slice start within its zone; used by `POST /regenerate-slices`
+- `AreWithinBounds(IReadOnlyList<PreviewSlice>, double duration)` — validates stored slices (in bounds, non-overlapping); used by sync to recompute bad legacy data
 
 ### `VideoType` (LCP.Domain/Entities/)
 ```csharp
@@ -206,7 +207,7 @@ class SiteSettings {
 | Phase | Order | Description |
 |---|---|---|
 | Seed | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
-| Sync (`LibrarySyncService`) | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+| Sync (`LibrarySyncService`) | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices` and recomputes stored ones that are out of bounds or overlapping; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
 
 Both phases run once per startup, sequentially, so they never race on `library.json`. The `stoppingToken` is honoured in the seed scan loop, so shutdown during indexing exits promptly. Any failure is caught and logged; it never aborts host startup. Progress and completion are logged via `ILogger<LibraryStartupService>`. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
 

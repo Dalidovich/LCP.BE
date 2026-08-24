@@ -101,7 +101,8 @@ public class LibrarySyncService : ILibrarySyncService
 
             foreach (var entry in allEntries)
             {
-                if (entry.PreviewSlices.Count == 0)
+                if (entry.PreviewSlices.Count == 0
+                    || !PreviewSlice.AreWithinBounds(entry.PreviewSlices, entry.Duration))
                 {
                     entry.PreviewSlices = PreviewSlice.CalculateSlices(entry.Duration);
                     changed = true;

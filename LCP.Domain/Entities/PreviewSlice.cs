@@ -2,6 +2,13 @@ namespace LCP.Domain.Entities;
 
 public class PreviewSlice
 {
+    private const int SliceCount = 5;
+    private const double SliceLength = 5;
+    private const double TotalSliceLength = SliceCount * SliceLength;
+    private const double PreferredStartMargin = 10;
+    private const double PreferredEndMargin = 5;
+    private const double BoundsTolerance = 0.1;
+
     public double Start { get; set; }
     public double Duration { get; set; }
 
@@ -9,52 +16,77 @@ public class PreviewSlice
 
     public static List<PreviewSlice> CalculateSlices(double duration)
     {
-        const int count = 5;
-        const double sliceDuration = 5;
-        const double totalDuration = count * sliceDuration;
-
-        if (duration <= totalDuration)
+        if (duration <= TotalSliceLength)
             return [new PreviewSlice { Start = 0, Duration = duration }];
 
-        var startMargin = Math.Min(10, duration * 0.05);
-        var endMargin = 5.0;
-        var usable = duration - startMargin - endMargin;
-        var gap = (usable - totalDuration) / (count - 1);
+        var (offset, usable) = CalculateUsableRange(duration, Math.Min(PreferredStartMargin, duration * 0.05));
+        var gap = Math.Max(0, (usable - TotalSliceLength) / (SliceCount - 1));
 
-        var slices = new List<PreviewSlice>(count);
-        for (var i = 0; i < count; i++)
+        var slices = new List<PreviewSlice>(SliceCount);
+        for (var i = 0; i < SliceCount; i++)
         {
-            var start = startMargin + i * (sliceDuration + gap);
-            slices.Add(new PreviewSlice { Start = Math.Round(start, 1), Duration = sliceDuration });
+            slices.Add(CreateBounded(offset + i * (SliceLength + gap), duration));
         }
         return slices;
     }
 
     public static List<PreviewSlice> CalculateRandomSlices(double duration)
     {
-        const int count = 5;
-        const double sliceDuration = 5;
-        const double totalDuration = count * sliceDuration;
-
-        if (duration <= totalDuration)
+        if (duration <= TotalSliceLength)
             return [new PreviewSlice { Start = 0, Duration = duration }];
 
         var rng = Random.Shared;
-        var startMargin = rng.Next(5, 16);
-        var endMargin = 5.0;
-        var usable = duration - startMargin - endMargin;
-        var zoneSize = usable / count;
+        var (offset, usable) = CalculateUsableRange(duration, rng.Next(5, 16));
+        var zoneLength = usable / SliceCount;
+        var jitterRange = Math.Max(0, zoneLength - SliceLength);
 
-        var slices = new List<PreviewSlice>(count);
-        for (var i = 0; i < count; i++)
+        var slices = new List<PreviewSlice>(SliceCount);
+        for (var i = 0; i < SliceCount; i++)
         {
-            var zoneStart = startMargin + i * zoneSize;
-            var maxStart = zoneStart + zoneSize - sliceDuration;
-            var start = maxStart > zoneStart
-                ? zoneStart + rng.NextDouble() * (maxStart - zoneStart)
-                : zoneStart;
-            slices.Add(new PreviewSlice { Start = Math.Round(start, 1), Duration = sliceDuration });
+            var zoneStart = offset + i * zoneLength;
+            slices.Add(CreateBounded(zoneStart + rng.NextDouble() * jitterRange, duration));
         }
         return slices;
+    }
+
+    public static bool AreWithinBounds(IReadOnlyList<PreviewSlice> slices, double duration)
+    {
+        var previousEnd = 0.0;
+        foreach (var slice in slices)
+        {
+            if (slice.Start < -BoundsTolerance) return false;
+            if (slice.Duration < 0) return false;
+            if (slice.Start + slice.Duration > duration + BoundsTolerance) return false;
+            if (slice.Start < previousEnd - BoundsTolerance) return false;
+            previousEnd = slice.Start + slice.Duration;
+        }
+        return true;
+    }
+
+    private static (double Offset, double Usable) CalculateUsableRange(double duration, double startMargin)
+    {
+        var endMargin = PreferredEndMargin;
+        var affordableMargin = duration - TotalSliceLength;
+        var requestedMargin = startMargin + endMargin;
+
+        if (requestedMargin > affordableMargin)
+        {
+            var scale = requestedMargin > 0 ? affordableMargin / requestedMargin : 0;
+            startMargin *= scale;
+            endMargin *= scale;
+        }
+
+        return (startMargin, duration - startMargin - endMargin);
+    }
+
+    private static PreviewSlice CreateBounded(double start, double duration)
+    {
+        var boundedStart = Math.Round(Math.Clamp(start, 0, duration), 1);
+        var available = Math.Max(0, duration - boundedStart);
+        return new PreviewSlice
+        {
+            Start = boundedStart,
+            Duration = Math.Min(available, Math.Round(Math.Min(SliceLength, available), 1))
+        };
     }
 }
