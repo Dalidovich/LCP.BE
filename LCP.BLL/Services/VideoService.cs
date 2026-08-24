@@ -60,7 +60,7 @@ public class VideoService : IVideoService
         {
             ordered = videos
                 .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= 0.2)
+                .Where(x => x.Score >= SearchHelper.MinScore)
                 .OrderByDescending(x => x.Score)
                 .Select(x => x.Video)
                 .ToList();
@@ -83,7 +83,7 @@ public class VideoService : IVideoService
         {
             ordered = videos
                 .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= 0.2)
+                .Where(x => x.Score >= SearchHelper.MinScore)
                 .OrderByDescending(x => x.Score)
                 .Select(x => x.Video)
                 .ToList();
@@ -128,7 +128,7 @@ public class VideoService : IVideoService
         {
             ordered = videos
                 .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= 0.2)
+                .Where(x => x.Score >= SearchHelper.MinScore)
                 .OrderByDescending(x => x.Score)
                 .Select(x => x.Video)
                 .ToList();

@@ -4,7 +4,11 @@ namespace LCP.BLL.Helpers;
 
 public static class SearchHelper
 {
-    private const double MinScore = 0.2;
+    public const double MinScore = 0.25;
+
+    private const double PrefixScore = 0.8;
+    private const double ContainmentScore = 0.6;
+    private const int FullConfidenceQueryLength = 3;
 
     public static double ScoreVideo(VideoMetadata video, string query)
     {
@@ -27,24 +31,27 @@ public static class SearchHelper
         return best;
     }
 
-    public static double TrigramSimilarity(string a, string b)
+    public static double TrigramSimilarity(string text, string query)
     {
-        var normA = a.ToLowerInvariant().Trim();
-        var normB = b.ToLowerInvariant().Trim();
+        var normText = Normalize(text);
+        var normQuery = Normalize(query);
 
-        if (normA.Length < 3 || normB.Length < 3)
-            return normA.Contains(normB) || normB.Contains(normA) ? 1.0 : 0.0;
+        if (normText.Length == 0 || normQuery.Length == 0)
+            return normText.Length == normQuery.Length ? 1.0 : 0.0;
 
-        var setA = GetTrigrams(a);
-        var setB = GetTrigrams(b);
+        var affinity = AffinityScore(normText, normQuery);
 
-        if (setA.Count == 0 && setB.Count == 0) return 1.0;
-        if (setA.Count == 0 || setB.Count == 0) return 0.0;
+        var textTrigrams = GetTrigrams(normText);
+        var queryTrigrams = GetTrigrams(normQuery);
 
-        var intersection = setA.Count(t => setB.Contains(t));
-        var min = Math.Min(setA.Count, setB.Count);
+        if (textTrigrams.Count == 0 || queryTrigrams.Count == 0)
+            return affinity;
 
-        return intersection / (double)min;
+        var intersection = textTrigrams.Count(queryTrigrams.Contains);
+        var union = textTrigrams.Count + queryTrigrams.Count - intersection;
+        var jaccard = union == 0 ? 0.0 : intersection / (double)union;
+
+        return jaccard + (1.0 - jaccard) * affinity;
     }
 
     public static bool IsMatch(VideoMetadata video, string query)
@@ -52,22 +59,54 @@ public static class SearchHelper
         return ScoreVideo(video, query) >= MinScore;
     }
 
-    private static HashSet<string> GetTrigrams(string input)
+    private static double AffinityScore(string normText, string normQuery)
     {
-        var normalized = input.ToLowerInvariant().Trim();
-        if (string.IsNullOrEmpty(normalized))
-            return [];
+        if (normQuery.Length > normText.Length)
+            return 0.0;
 
-        if (normalized.Length < 3)
+        var confidence = Math.Min(1.0, normQuery.Length / (double)FullConfidenceQueryLength);
+
+        if (StartsAnyWord(normText, normQuery))
+            return PrefixScore * confidence;
+
+        if (normText.Contains(normQuery, StringComparison.Ordinal))
+            return ContainmentScore * confidence;
+
+        return 0.0;
+    }
+
+    private static bool StartsAnyWord(string text, string prefix)
+    {
+        if (text.StartsWith(prefix, StringComparison.Ordinal))
+            return true;
+
+        var index = text.IndexOf(' ');
+        while (index >= 0 && index + 1 + prefix.Length <= text.Length)
         {
-            var set = new HashSet<string> { normalized };
-            return set;
+            if (string.CompareOrdinal(text, index + 1, prefix, 0, prefix.Length) == 0)
+                return true;
+            index = text.IndexOf(' ', index + 1);
         }
 
+        return false;
+    }
+
+    private static string Normalize(string input)
+    {
+        return string.Join(' ', input.ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static HashSet<string> GetTrigrams(string normalized)
+    {
         var trigrams = new HashSet<string>();
-        for (var i = 0; i <= normalized.Length - 3; i++)
+
+        foreach (var word in normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            trigrams.Add(normalized.Substring(i, 3));
+            var padded = $"  {word} ";
+            for (var i = 0; i <= padded.Length - 3; i++)
+            {
+                trigrams.Add(padded.Substring(i, 3));
+            }
         }
 
         return trigrams;
