@@ -5,6 +5,8 @@ using LCP.BLL.Services;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
 using LCP.DAL.Repositories;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Serilog;
 
 namespace LCP.API;
@@ -39,6 +41,34 @@ public class Program
 
             builder.Services.AddControllers();
             builder.Services.AddSwaggerGen();
+
+            builder.Services
+                .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddCookie(options =>
+                {
+                    options.Cookie.Name = "lcp_session";
+                    options.Cookie.HttpOnly = true;
+                    options.Cookie.SameSite = SameSiteMode.Lax;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                    options.Cookie.IsEssential = true;
+                    options.ExpireTimeSpan = TimeSpan.FromDays(7);
+                    options.SlidingExpiration = true;
+                    options.Events.OnRedirectToLogin = context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        return Task.CompletedTask;
+                    };
+                    options.Events.OnRedirectToAccessDenied = context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        return Task.CompletedTask;
+                    };
+                });
+
+            builder.Services.AddAuthorizationBuilder()
+                .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build());
 
             builder.Services.Configure<LibrarySettings>(
                 builder.Configuration.GetSection(LibrarySettings.SectionName));
@@ -92,6 +122,8 @@ public class Program
             }
 
             app.UseCors();
+
+            app.UseAuthentication();
 
             app.UseAuthorization();
 

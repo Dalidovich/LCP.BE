@@ -1,8 +1,12 @@
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 
 namespace LCP.API.Controllers;
 
@@ -32,13 +36,39 @@ public class SettingsController : ControllerBase
         return result;
     }
 
+    [AllowAnonymous]
     [HttpPost("check-password")]
-    public ActionResult<bool> CheckPassword([FromBody] PasswordRequest request)
+    public async Task<ActionResult<bool>> CheckPassword([FromBody] PasswordRequest request)
     {
         var stored = _settings.Value.Password;
         if (string.IsNullOrEmpty(stored))
-            return false;
+            return Unauthorized();
 
-        return string.Equals(request.Password, stored, StringComparison.Ordinal);
+        if (!string.Equals(request.Password, stored, StringComparison.Ordinal))
+            return Unauthorized();
+
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "owner")],
+            CookieAuthenticationDefaults.AuthenticationScheme);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity));
+
+        return Ok(true);
+    }
+
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return NoContent();
+    }
+
+    [AllowAnonymous]
+    [HttpGet("session")]
+    public ActionResult<bool> Session()
+    {
+        return User.Identity?.IsAuthenticated == true;
     }
 }
