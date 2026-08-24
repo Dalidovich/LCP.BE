@@ -9,12 +9,16 @@ public class ProductionInfoService : IProductionInfoService
 {
     private readonly IProductionInfoRepository _repository;
     private readonly IVideoRepository _videoRepository;
-    private static List<ProductionInfoDto>? _cachedInfo;
+    private readonly IInfoCache<ProductionInfoDto> _infoCache;
 
-    public ProductionInfoService(IProductionInfoRepository repository, IVideoRepository videoRepository)
+    public ProductionInfoService(
+        IProductionInfoRepository repository,
+        IVideoRepository videoRepository,
+        IInfoCache<ProductionInfoDto> infoCache)
     {
         _repository = repository;
         _videoRepository = videoRepository;
+        _infoCache = infoCache;
     }
 
     public async Task<List<string>> GetAllAsync(List<VideoType>? videoTypeFilter = null)
@@ -38,12 +42,14 @@ public class ProductionInfoService : IProductionInfoService
 
     public async Task<List<ProductionInfoDto>> GetInfoAsync(List<VideoType>? videoTypeFilter = null)
     {
-        if (videoTypeFilter is not { Count: > 0 })
-        {
-            if (_cachedInfo is not null)
-                return _cachedInfo;
-        }
+        if (videoTypeFilter is { Count: > 0 })
+            return Copy(await ComputeInfoAsync(videoTypeFilter));
 
+        return Copy(await _infoCache.GetOrCreateAsync(() => ComputeInfoAsync(null)));
+    }
+
+    private async Task<IReadOnlyList<ProductionInfoDto>> ComputeInfoAsync(List<VideoType>? videoTypeFilter)
+    {
         var allVideos = await _videoRepository.GetAllRawAsync();
         var filtered = videoTypeFilter is { Count: > 0 }
             ? allVideos.Where(v => videoTypeFilter.Contains(v.Type)).ToList()
@@ -58,26 +64,25 @@ public class ProductionInfoService : IProductionInfoService
                 counts[studio] = c + 1;
             }
         }
-        var result = counts
+
+        return counts
             .Select(kvp => new ProductionInfoDto { Name = kvp.Key, UsageCount = kvp.Value })
             .OrderBy(t => t.Name)
             .ToList();
-
-        if (videoTypeFilter is not { Count: > 0 })
-            _cachedInfo = result;
-
-        return result;
     }
+
+    private static List<ProductionInfoDto> Copy(IReadOnlyList<ProductionInfoDto> source) =>
+        [.. source.Select(p => new ProductionInfoDto { Name = p.Name, UsageCount = p.UsageCount })];
 
     public void InvalidateInfoCache()
     {
-        _cachedInfo = null;
+        _infoCache.Invalidate();
     }
 
     public async Task AddAsync(string studio)
     {
         await _repository.AddAsync(studio);
-        _cachedInfo = null;
+        _infoCache.Invalidate();
     }
 
     public async Task<bool> ExistsAllAsync(List<string> studios)
@@ -105,7 +110,7 @@ public class ProductionInfoService : IProductionInfoService
             return (anyRemoved, anyRemoved);
         });
 
-        if (changed) _cachedInfo = null;
+        if (changed) _infoCache.Invalidate();
 
         return true;
     }

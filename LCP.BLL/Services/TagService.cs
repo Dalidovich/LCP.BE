@@ -9,12 +9,13 @@ public class TagService : ITagService
 {
     private readonly ITagRepository _repository;
     private readonly IVideoRepository _videoRepository;
-    private static List<TagInfo>? _cachedInfo;
+    private readonly IInfoCache<TagInfo> _infoCache;
 
-    public TagService(ITagRepository repository, IVideoRepository videoRepository)
+    public TagService(ITagRepository repository, IVideoRepository videoRepository, IInfoCache<TagInfo> infoCache)
     {
         _repository = repository;
         _videoRepository = videoRepository;
+        _infoCache = infoCache;
     }
 
     public async Task<List<string>> GetAllAsync(List<VideoType>? videoTypeFilter = null)
@@ -38,12 +39,14 @@ public class TagService : ITagService
 
     public async Task<List<TagInfo>> GetInfoAsync(List<VideoType>? videoTypeFilter = null)
     {
-        if (videoTypeFilter is not { Count: > 0 })
-        {
-            if (_cachedInfo is not null)
-                return _cachedInfo;
-        }
+        if (videoTypeFilter is { Count: > 0 })
+            return Copy(await ComputeInfoAsync(videoTypeFilter));
 
+        return Copy(await _infoCache.GetOrCreateAsync(() => ComputeInfoAsync(null)));
+    }
+
+    private async Task<IReadOnlyList<TagInfo>> ComputeInfoAsync(List<VideoType>? videoTypeFilter)
+    {
         var allVideos = await _videoRepository.GetAllRawAsync();
         var filtered = videoTypeFilter is { Count: > 0 }
             ? allVideos.Where(v => videoTypeFilter.Contains(v.Type)).ToList()
@@ -58,26 +61,25 @@ public class TagService : ITagService
                 counts[tag] = c + 1;
             }
         }
-        var result = counts
+
+        return counts
             .Select(kvp => new TagInfo { Tag = kvp.Key, UsageCount = kvp.Value })
             .OrderBy(t => t.Tag)
             .ToList();
-
-        if (videoTypeFilter is not { Count: > 0 })
-            _cachedInfo = result;
-
-        return result;
     }
+
+    private static List<TagInfo> Copy(IReadOnlyList<TagInfo> source) =>
+        [.. source.Select(t => new TagInfo { Tag = t.Tag, UsageCount = t.UsageCount })];
 
     public void InvalidateInfoCache()
     {
-        _cachedInfo = null;
+        _infoCache.Invalidate();
     }
 
     public async Task AddAsync(string tag)
     {
         await _repository.AddAsync(tag);
-        _cachedInfo = null;
+        _infoCache.Invalidate();
     }
 
     public async Task<bool> ExistsAllAsync(List<string> tags)
@@ -105,7 +107,7 @@ public class TagService : ITagService
             return (anyRemoved, anyRemoved);
         });
 
-        if (changed) _cachedInfo = null;
+        if (changed) _infoCache.Invalidate();
 
         return true;
     }

@@ -90,6 +90,8 @@ public class Program
             builder.Services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
             builder.Services.AddSingleton<IMediaWarmupService, MediaWarmupService>();
             builder.Services.AddSingleton<ILibrarySyncService, LibrarySyncService>();
+            builder.Services.AddSingleton<IRandomSortSeedProvider, RandomSortSeedProvider>();
+            builder.Services.AddSingleton(typeof(IInfoCache<>), typeof(InfoCache<>));
 
             builder.Services.AddHostedService<LibraryStartupService>();
 

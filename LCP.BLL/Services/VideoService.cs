@@ -23,8 +23,7 @@ public class VideoService : IVideoService
     private readonly ILogger<VideoService> _logger;
     private readonly string _libraryRootPath;
     private const int MaxNameClaimAttempts = 1000;
-    private static int? _randomSortSeed;
-    private static bool _randomSortWasEnabled;
+    private readonly IRandomSortSeedProvider _randomSortSeedProvider;
 
     public VideoService(
         IVideoRepository repository,
@@ -35,6 +34,7 @@ public class VideoService : IVideoService
         IPreviewService previewService,
         IVideoProcessingService videoProcessing,
         ISettingsRepository settingsRepository,
+        IRandomSortSeedProvider randomSortSeedProvider,
         ILogger<VideoService> logger,
         IOptions<LibrarySettings> settings)
     {
@@ -46,6 +46,7 @@ public class VideoService : IVideoService
         _previewService = previewService;
         _videoProcessing = videoProcessing;
         _settingsRepository = settingsRepository;
+        _randomSortSeedProvider = randomSortSeedProvider;
         _logger = logger;
         _libraryRootPath = settings.Value.LibraryRootPath;
     }
@@ -449,19 +450,13 @@ public class VideoService : IVideoService
         var settings = await _settingsRepository.GetAsync();
         if (settings is null) return videos;
 
+        var seed = _randomSortSeedProvider.GetSeed(settings.RandomSort);
+
         if (settings.RandomSort)
         {
-            if (!_randomSortWasEnabled || _randomSortSeed is null)
-            {
-                _randomSortSeed = Random.Shared.Next();
-            }
-            _randomSortWasEnabled = true;
-
-            var rng = new Random(_randomSortSeed.Value);
+            var rng = new Random(seed);
             return videos.OrderBy(_ => rng.Next()).ToList();
         }
-
-        _randomSortWasEnabled = false;
 
         if (settings.StatisticsMode)
         {
