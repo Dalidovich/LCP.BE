@@ -179,7 +179,12 @@ public class Program
 
         var errors = new List<string>();
         var configKeys = section.GetChildren().Select(c => c.Key).ToList();
-        var optionalKeys = new HashSet<string> { nameof(LibrarySettings.MaxSyncDeletionRatio) };
+        var optionalKeys = new HashSet<string>
+        {
+            nameof(LibrarySettings.MaxSyncDeletionRatio),
+            nameof(LibrarySettings.ThumbnailCacheBytes),
+            nameof(LibrarySettings.PreviewCacheBytes)
+        };
 
         foreach (var prop in typeof(LibrarySettings).GetProperties())
         {

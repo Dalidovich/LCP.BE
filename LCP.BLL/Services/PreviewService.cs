@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -16,8 +15,7 @@ public class PreviewService : IPreviewService
     private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
     private readonly ILogger<PreviewService> _logger;
-    private static readonly ConcurrentDictionary<string, PreviewResult> Cache = new();
-    private const int MaxCacheSize = 100;
+    private readonly MediaCache<PreviewResult> _cache;
 
     public PreviewService(
         IVideoRepository repository,
@@ -29,25 +27,24 @@ public class PreviewService : IPreviewService
         _videoProcessing = videoProcessing;
         _libraryRootPath = settings.Value.LibraryRootPath;
         _logger = logger;
+        _cache = new MediaCache<PreviewResult>(settings.Value.PreviewCacheBytes);
     }
 
     public void InvalidateCache(string videoId)
     {
-        var keys = Cache.Keys.Where(k => k.StartsWith(videoId + "_")).ToArray();
-        foreach (var key in keys)
-            Cache.TryRemove(key, out _);
+        _cache.RemoveWhere(k => k.StartsWith(videoId + "_"));
     }
 
     public void ClearAllCache()
     {
-        Cache.Clear();
+        _cache.Clear();
     }
 
     public async Task<PreviewResult?> GetPreviewAsync(string videoId, PreviewResolution resolution)
     {
         var cacheKey = $"{videoId}_{resolution}";
 
-        if (Cache.TryGetValue(cacheKey, out var cached))
+        if (_cache.TryGet(cacheKey, out var cached))
             return cached;
 
         var video = await _repository.GetByIdAsync(videoId);
@@ -62,8 +59,7 @@ public class PreviewService : IPreviewService
 
         var result = new PreviewResult(data, TruncateToSecond(DateTime.UtcNow));
 
-        EvictIfNeeded();
-        Cache[cacheKey] = result;
+        _cache.Set(cacheKey, result, data.Length);
         return result;
     }
 
@@ -71,16 +67,6 @@ public class PreviewService : IPreviewService
     {
         var ticks = value.Ticks;
         return new DateTime(ticks - ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
-    }
-
-    private static void EvictIfNeeded()
-    {
-        if (Cache.Count >= MaxCacheSize)
-        {
-            var key = Cache.Keys.FirstOrDefault();
-            if (key is not null)
-                Cache.TryRemove(key, out _);
-        }
     }
 
     private byte[]? GeneratePreview(string videoPath, PreviewResolution resolution, List<PreviewSlice> slices)

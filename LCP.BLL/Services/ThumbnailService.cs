@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -15,8 +14,7 @@ public class ThumbnailService : IThumbnailService
     private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
     private readonly ILogger<ThumbnailService> _logger;
-    private static readonly ConcurrentDictionary<string, ThumbnailResult> Cache = new();
-    private const int MaxCacheSize = 100;
+    private readonly MediaCache<ThumbnailResult> _cache;
 
     public ThumbnailService(
         IVideoRepository repository,
@@ -28,21 +26,22 @@ public class ThumbnailService : IThumbnailService
         _videoProcessing = videoProcessing;
         _libraryRootPath = settings.Value.LibraryRootPath;
         _logger = logger;
+        _cache = new MediaCache<ThumbnailResult>(settings.Value.ThumbnailCacheBytes);
     }
 
     public void InvalidateCache(string videoId)
     {
-        Cache.TryRemove(videoId, out _);
+        _cache.Remove(videoId);
     }
 
     public void ClearAllCache()
     {
-        Cache.Clear();
+        _cache.Clear();
     }
 
     public async Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
     {
-        if (Cache.TryGetValue(videoId, out var cached))
+        if (_cache.TryGet(videoId, out var cached))
             return cached;
 
         var video = await _repository.GetByIdAsync(videoId);
@@ -56,8 +55,7 @@ public class ThumbnailService : IThumbnailService
 
         var result = new ThumbnailResult(data, TruncateToSecond(DateTime.UtcNow));
 
-        EvictIfNeeded();
-        Cache[videoId] = result;
+        _cache.Set(videoId, result, data.Length);
         return result;
     }
 
@@ -79,16 +77,6 @@ public class ThumbnailService : IThumbnailService
     {
         var ticks = value.Ticks;
         return new DateTime(ticks - ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
-    }
-
-    private static void EvictIfNeeded()
-    {
-        if (Cache.Count >= MaxCacheSize)
-        {
-            var key = Cache.Keys.FirstOrDefault();
-            if (key is not null)
-                Cache.TryRemove(key, out _);
-        }
     }
 
     private byte[]? ExtractFrame(string videoPath, double timecode)

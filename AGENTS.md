@@ -118,7 +118,9 @@ class SiteSettings {
     "PasswordHash": "",
     "PasswordSalt": "",
     "SmartVideoGrouping": false,
-    "MaxSyncDeletionRatio": 0.5
+    "MaxSyncDeletionRatio": 0.5,
+    "ThumbnailCacheBytes": 67108864,
+    "PreviewCacheBytes": 536870912
   }
 }
 ```
@@ -128,6 +130,7 @@ class SiteSettings {
 - `PasswordHash` / `PasswordSalt` — optional; base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`. When either is empty the password gate is disabled: the fallback policy is satisfied without a session, `check-password` and `session` return `true`, and the frontend skips the prompt. Set both to require a login. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`. When `SHARED_CONFIG_PATH` is used, `ValidateSharedConfig` requires both to be non-empty
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
 - `MaxSyncDeletionRatio` — optional (default `0.5`); fraction of entries sync may prune in one pass. Above it, pruning is skipped and logged at error level. Ignored for libraries with fewer than 10 entries and for values outside `(0, 1)`. Exempt from the `ValidateSharedConfig` presence check
+- `ThumbnailCacheBytes` / `PreviewCacheBytes` — optional (defaults `67108864` / `536870912`); byte budgets for the in-memory thumbnail and preview LRU caches. Non-positive values are clamped to 1 byte, which still keeps a single entry resident. Exempt from the `ValidateSharedConfig` presence check
 
 ## DTOs (LCP.BLL/DTOs/)
 
@@ -229,8 +232,8 @@ All videos are included in grouping logic.
 
 - **Create endpoint** — `POST /api/videos/new` uploads video files; JSON file is also managed via seed/sync services
 - **Trigram search** — `GET /api/videos?search=` uses trigram fuzzy matching on video names (not substring comparison)
-- **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`ConcurrentDictionary<string, ThumbnailResult>` keyed by video ID, max 100 entries, FIFO eviction). Each entry stores the bytes together with the generation timestamp (truncated to whole seconds), so the ETag and `Last-Modified` stay stable across cache hits and conditional requests return `304`. Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching (uncached entries get a fresh timestamp and never revalidate).
-- **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory keyed by `{id}_{resolution}` as `PreviewResult` entries carrying the generation timestamp (truncated to whole seconds) for stable ETag revalidation. Single-slice previews use direct conversion without temp files.
+- **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`MediaCache<ThumbnailResult>` keyed by video ID — byte-bounded LRU, limit `LibrarySettings.ThumbnailCacheBytes`, default 64 MB). Each entry stores the bytes together with the generation timestamp (truncated to whole seconds), so the ETag and `Last-Modified` stay stable across cache hits and conditional requests return `304`. Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`. Supports `?t=` for frame-at-timecode query without caching (uncached entries get a fresh timestamp and never revalidate).
+- **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory as `MediaCache<PreviewResult>` keyed by `{id}_{resolution}` — byte-bounded LRU, limit `LibrarySettings.PreviewCacheBytes`, default 512 MB — with entries carrying the generation timestamp (truncated to whole seconds) for stable ETag revalidation. `InvalidateCache(id)` removes every resolution by key prefix. Single-slice previews use direct conversion without temp files.
 - **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance. Reads return detached deep copies (`VideoMetadata.Clone()`, `SiteSettings.Clone()`), so caller mutations never reach the cache until `SaveAllAsync`/`UpdateAsync`
 - **Read-modify-write on videos** — never `GetAllRawAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types

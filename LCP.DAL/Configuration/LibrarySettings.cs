@@ -1,4 +1,4 @@
-namespace LCP.DAL.Configuration;
+﻿namespace LCP.DAL.Configuration;
 
 public class LibrarySettings
 {
@@ -14,6 +14,8 @@ public class LibrarySettings
     public string PasswordSalt { get; set; } = string.Empty;
     public bool SmartVideoGrouping { get; set; }
     public double MaxSyncDeletionRatio { get; set; } = 0.5;
+    public long ThumbnailCacheBytes { get; set; } = 64L * 1024 * 1024;
+    public long PreviewCacheBytes { get; set; } = 512L * 1024 * 1024;
 
     public string ResolveSystemFilePath(string relativePath)
     {
