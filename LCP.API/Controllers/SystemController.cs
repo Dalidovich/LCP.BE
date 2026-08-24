@@ -145,76 +145,105 @@ public class SystemController : ControllerBase
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded" });
 
-        // 1. Clear LibraryRootPath
-        var rootDir = new DirectoryInfo(_libraryRootPath);
-        if (rootDir.Exists)
+        var libraryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_libraryRootPath));
+        var parentDir = Path.GetDirectoryName(libraryRoot);
+
+        if (string.IsNullOrEmpty(parentDir))
+            return BadRequest(new { error = "Library root path has no parent directory to stage the import in" });
+
+        var stagingPath = Path.Combine(parentDir, $".lcp-import-{Guid.NewGuid():N}");
+        var oldLibraryPath = Path.Combine(parentDir, $".lcp-old-{Guid.NewGuid():N}");
+
+        try
         {
-            foreach (var f in rootDir.GetFiles())
+            Directory.CreateDirectory(stagingPath);
+
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                try { f.Delete(); } catch { /* skip locked files */ }
+                using var archive = new ZipArchive(file.OpenReadStream(), ZipArchiveMode.Read);
+
+                foreach (var entry in archive.Entries)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    if (string.IsNullOrEmpty(entry.Name))
+                        continue;
+
+                    var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+
+                    if (!TryResolveEntryPath(stagingPath, entryPath, out var fullPath))
+                    {
+                        _logger.LogWarning("Skipped archive entry outside library root: {EntryName}", entry.FullName);
+                        continue;
+                    }
+
+                    var entryDir = Path.GetDirectoryName(fullPath);
+
+                    if (!string.IsNullOrEmpty(entryDir) && !Directory.Exists(entryDir))
+                        Directory.CreateDirectory(entryDir);
+
+                    entry.ExtractToFile(fullPath, overwrite: true);
+                }
             }
-            foreach (var sub in rootDir.GetDirectories())
+            catch (InvalidDataException ex)
             {
-                ct.ThrowIfCancellationRequested();
-                try { sub.Delete(true); } catch { /* skip locked dirs */ }
+                _logger.LogWarning(ex, "Rejected import: uploaded file is not a valid ZIP archive");
+                return BadRequest(new { error = "Uploaded file is not a valid ZIP archive" });
             }
-        }
 
-        // 2. Extract ZIP contents
-        using var archive = new ZipArchive(file.OpenReadStream(), ZipArchiveMode.Read);
+            var systemFiles = new[]
+            {
+                LibrarySettings.JsonFileName,
+                LibrarySettings.TagsFileName,
+                LibrarySettings.SettingsFileName,
+                LibrarySettings.ProductionInfoFileName,
+            };
 
-        var extractionRoot = Path.GetFullPath(_libraryRootPath);
+            foreach (var sysFile in systemFiles)
+            {
+                var filePath = Path.Combine(stagingPath, "SYSTEMFILES", sysFile);
+                if (!System.IO.File.Exists(filePath))
+                {
+                    var sysDir = Path.GetDirectoryName(filePath);
+                    if (!string.IsNullOrEmpty(sysDir) && !Directory.Exists(sysDir))
+                        Directory.CreateDirectory(sysDir);
 
-        foreach (var entry in archive.Entries)
-        {
+                    var defaultContent = sysFile == LibrarySettings.SettingsFileName
+                        ? "{}"
+                        : "[]";
+                    await System.IO.File.WriteAllTextAsync(filePath, defaultContent, ct);
+                }
+            }
+
             ct.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrEmpty(entry.Name))
-                continue;
+            var hadExistingLibrary = Directory.Exists(libraryRoot);
 
-            var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+            if (hadExistingLibrary)
+                Directory.Move(libraryRoot, oldLibraryPath);
 
-            if (!TryResolveEntryPath(extractionRoot, entryPath, out var fullPath))
+            try
             {
-                _logger.LogWarning("Skipped archive entry outside library root: {EntryName}", entry.FullName);
-                continue;
+                Directory.Move(stagingPath, libraryRoot);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to move staged import into {LibraryRoot}, restoring previous library", libraryRoot);
+
+                if (hadExistingLibrary)
+                    Directory.Move(oldLibraryPath, libraryRoot);
+
+                throw;
             }
 
-            var entryDir = Path.GetDirectoryName(fullPath);
-
-            if (!string.IsNullOrEmpty(entryDir) && !Directory.Exists(entryDir))
-                Directory.CreateDirectory(entryDir);
-
-            entry.ExtractToFile(fullPath, overwrite: true);
+            if (hadExistingLibrary)
+                TryDeleteDirectory(oldLibraryPath);
+        }
+        finally
+        {
+            TryDeleteDirectory(stagingPath);
         }
 
-        // 3. Ensure system files exist (create empty defaults if missing)
-        var systemFiles = new[]
-        {
-            LibrarySettings.JsonFileName,
-            LibrarySettings.TagsFileName,
-            LibrarySettings.SettingsFileName,
-            LibrarySettings.ProductionInfoFileName,
-        };
-
-        foreach (var sysFile in systemFiles)
-        {
-            var filePath = Path.Combine(_libraryRootPath, "SYSTEMFILES", sysFile);
-            if (!System.IO.File.Exists(filePath))
-            {
-                var sysDir = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(sysDir) && !Directory.Exists(sysDir))
-                    Directory.CreateDirectory(sysDir);
-
-                var defaultContent = sysFile == LibrarySettings.SettingsFileName
-                    ? "{}"
-                    : "[]";
-                await System.IO.File.WriteAllTextAsync(filePath, defaultContent, ct);
-            }
-        }
-
-        // 4. Invalidate all caches
         await _videoRepository.InvalidateCacheAsync();
         await _tagRepository.InvalidateCacheAsync();
         await _settingsRepository.InvalidateCacheAsync();
@@ -223,6 +252,19 @@ public class SystemController : ControllerBase
         _previewService.ClearAllCache();
 
         return Ok(new { message = "Import completed successfully" });
+    }
+
+    private void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete directory {Path}", path);
+        }
     }
 
     private static bool TryResolveEntryPath(string root, string entryPath, out string fullPath)
