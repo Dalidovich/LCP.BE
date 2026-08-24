@@ -117,7 +117,8 @@ class SiteSettings {
     "LibraryRootPath": "D:\\Media",
     "PasswordHash": "",
     "PasswordSalt": "",
-    "SmartVideoGrouping": false
+    "SmartVideoGrouping": false,
+    "MaxSyncDeletionRatio": 0.5
   }
 }
 ```
@@ -126,6 +127,7 @@ class SiteSettings {
 - `LibraryRootPath` — root directory for video files. Full paths resolved as `LibraryRootPath + video.RelativePath`.
 - `PasswordHash` / `PasswordSalt` — optional; base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`. When either is empty the password gate is disabled: the fallback policy is satisfied without a session, `check-password` and `session` return `true`, and the frontend skips the prompt. Set both to require a login. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`. When `SHARED_CONFIG_PATH` is used, `ValidateSharedConfig` requires both to be non-empty
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
+- `MaxSyncDeletionRatio` — optional (default `0.5`); fraction of entries sync may prune in one pass. Above it, pruning is skipped and logged at error level. Ignored for libraries with fewer than 10 entries and for values outside `(0, 1)`. Exempt from the `ValidateSharedConfig` presence check
 
 ## DTOs (LCP.BLL/DTOs/)
 
@@ -181,7 +183,7 @@ class SiteSettings {
 | Service | Order | Description |
 |---|---|---|
 | `LibrarySeedService` | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
-| `LibrarySyncService` | 2nd | Bidirectional sync: removes entries whose file is missing from disk; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+| `LibrarySyncService` | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices`; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
 
 Both run once on startup. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
 

@@ -13,6 +13,7 @@ public class LibrarySettings
     public string PasswordHash { get; set; } = string.Empty;
     public string PasswordSalt { get; set; } = string.Empty;
     public bool SmartVideoGrouping { get; set; }
+    public double MaxSyncDeletionRatio { get; set; } = 0.5;
 
     public string ResolveSystemFilePath(string relativePath)
     {

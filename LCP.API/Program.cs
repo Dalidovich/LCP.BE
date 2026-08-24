@@ -179,9 +179,12 @@ public class Program
 
         var errors = new List<string>();
         var configKeys = section.GetChildren().Select(c => c.Key).ToList();
+        var optionalKeys = new HashSet<string> { nameof(LibrarySettings.MaxSyncDeletionRatio) };
 
         foreach (var prop in typeof(LibrarySettings).GetProperties())
         {
+            if (optionalKeys.Contains(prop.Name)) continue;
+
             if (prop.PropertyType == typeof(string))
             {
                 var value = prop.GetValue(settings) as string;
