@@ -39,7 +39,7 @@ public class JsonVideoRepository : IVideoRepository
         try
         {
             _cache ??= await LoadAsync();
-            return [.. _cache];
+            return [.. _cache.Select(v => v.Clone())];
         }
         finally
         {
@@ -53,7 +53,7 @@ public class JsonVideoRepository : IVideoRepository
         try
         {
             _cache ??= await LoadAsync();
-            return _cache.Where(v => v.CollectionId == collectionId).ToList();
+            return [.. _cache.Where(v => v.CollectionId == collectionId).Select(v => v.Clone())];
         }
         finally
         {
@@ -85,7 +85,7 @@ public class JsonVideoRepository : IVideoRepository
         try
         {
             _cache ??= await LoadAsync();
-            return _cache.FirstOrDefault(v => v.Id == id);
+            return _cache.FirstOrDefault(v => v.Id == id)?.Clone();
         }
         finally
         {
@@ -99,12 +99,14 @@ public class JsonVideoRepository : IVideoRepository
         try
         {
             _cache ??= await LoadAsync();
-            var query = _cache.ToList();
-            var totalCount = query.Count;
-            var items = query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
+            var totalCount = _cache.Count;
+            List<VideoMetadata> items =
+            [
+                .. _cache
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(v => v.Clone())
+            ];
             return (items, totalCount);
         }
         finally
@@ -118,7 +120,7 @@ public class JsonVideoRepository : IVideoRepository
         await _lock.WaitAsync();
         try
         {
-            _cache = videos;
+            _cache = [.. videos.Select(v => v.Clone())];
             await SaveAsync(videos);
         }
         finally

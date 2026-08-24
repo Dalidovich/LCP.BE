@@ -9,4 +9,15 @@ public class SiteSettings
     public bool Debug { get; set; }
     public bool StatisticsMode { get; set; }
     public List<VideoType> VideoTypeFilter { get; set; } = [];
+
+    public SiteSettings Clone() => new()
+    {
+        Theme = Theme,
+        AnimeSpeedUp = AnimeSpeedUp,
+        WarmCache = WarmCache,
+        RandomSort = RandomSort,
+        Debug = Debug,
+        StatisticsMode = StatisticsMode,
+        VideoTypeFilter = [.. VideoTypeFilter]
+    };
 }

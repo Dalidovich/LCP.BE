@@ -5,6 +5,8 @@ public class PreviewSlice
     public double Start { get; set; }
     public double Duration { get; set; }
 
+    public PreviewSlice Clone() => new() { Start = Start, Duration = Duration };
+
     public static List<PreviewSlice> CalculateSlices(double duration)
     {
         const int count = 5;

@@ -16,4 +16,22 @@ public class VideoMetadata
     public double Duration { get; set; }
     public DateTime? LastTimeWatched { get; set; }
     public List<PreviewSlice> PreviewSlices { get; set; } = [];
+
+    public VideoMetadata Clone() => new()
+    {
+        Id = Id,
+        RelativePath = RelativePath,
+        SystemName = SystemName,
+        NameEn = NameEn,
+        NameLocal = NameLocal,
+        CollectionId = CollectionId,
+        EpisodeNumber = EpisodeNumber,
+        Type = Type,
+        Tags = [.. Tags],
+        ProductionInfo = [.. ProductionInfo],
+        ThumbnailTimecode = ThumbnailTimecode,
+        Duration = Duration,
+        LastTimeWatched = LastTimeWatched,
+        PreviewSlices = [.. PreviewSlices.Select(s => s.Clone())]
+    };
 }

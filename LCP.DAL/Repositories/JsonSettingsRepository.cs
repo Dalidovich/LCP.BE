@@ -34,7 +34,7 @@ public class JsonSettingsRepository : ISettingsRepository
         try
         {
             _cache ??= await LoadAsync();
-            return _cache;
+            return _cache.Clone();
         }
         finally
         {
@@ -47,7 +47,7 @@ public class JsonSettingsRepository : ISettingsRepository
         await _lock.WaitAsync();
         try
         {
-            _cache = settings;
+            _cache = settings.Clone();
             await SaveAsync(settings);
         }
         finally
