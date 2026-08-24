@@ -184,7 +184,9 @@ public class Program
         {
             nameof(LibrarySettings.MaxSyncDeletionRatio),
             nameof(LibrarySettings.ThumbnailCacheBytes),
-            nameof(LibrarySettings.PreviewCacheBytes)
+            nameof(LibrarySettings.PreviewCacheBytes),
+            nameof(LibrarySettings.FfmpegProbeTimeoutSeconds),
+            nameof(LibrarySettings.FfmpegConvertTimeoutSeconds)
         };
 
         foreach (var prop in typeof(LibrarySettings).GetProperties())

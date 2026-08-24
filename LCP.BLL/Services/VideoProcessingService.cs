@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
+using LCP.DAL.Configuration;
 using LCP.Domain.Entities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NReco.VideoConverter;
 
 namespace LCP.BLL.Services;
@@ -11,12 +13,21 @@ namespace LCP.BLL.Services;
 public class VideoProcessingService : IVideoProcessingService
 {
     private readonly ILogger<VideoProcessingService> _logger;
+    private readonly TimeSpan _probeTimeout;
+    private readonly TimeSpan _convertTimeout;
     private static string? _ffmpegExePath;
     private static readonly SemaphoreSlim FfmpegLimiter = new(Math.Max(1, Environment.ProcessorCount / 2));
 
-    public VideoProcessingService(ILogger<VideoProcessingService> logger)
+    public VideoProcessingService(ILogger<VideoProcessingService> logger, IOptions<LibrarySettings> settings)
     {
         _logger = logger;
+        _probeTimeout = ResolveTimeout(settings.Value.FfmpegProbeTimeoutSeconds, 30);
+        _convertTimeout = ResolveTimeout(settings.Value.FfmpegConvertTimeoutSeconds, 300);
+    }
+
+    private static TimeSpan ResolveTimeout(int configuredSeconds, int fallbackSeconds)
+    {
+        return TimeSpan.FromSeconds(configuredSeconds > 0 ? configuredSeconds : fallbackSeconds);
     }
 
     private static string GetFfmpegExePath()
@@ -98,8 +109,19 @@ public class VideoProcessingService : IVideoProcessingService
                 return 0;
             }
 
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
+            if (!process.WaitForExit((int)_probeTimeout.TotalMilliseconds))
+            {
+                _logger.LogWarning(
+                    "ffmpeg probe exceeded {TimeoutSeconds}s for {VideoPath}; killing the process and reporting an unknown duration",
+                    _probeTimeout.TotalSeconds, videoPath);
+                KillProcessTree(process, videoPath);
+                ObserveFailure(stderrTask);
+                return 0;
+            }
+
+            var stderr = stderrTask.GetAwaiter().GetResult();
 
             var match = Regex.Match(stderr, @"Duration: (\d+):(\d+):(\d+)\.(\d+)");
             if (match.Success)
@@ -118,6 +140,57 @@ public class VideoProcessingService : IVideoProcessingService
             _logger.LogError(ex, "Failed to probe duration for {VideoPath}", videoPath);
         }
         return 0;
+    }
+
+    private void KillProcessTree(Process process, string videoPath)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+
+            process.WaitForExit(5000);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to kill the stalled ffmpeg process for {VideoPath}", videoPath);
+        }
+    }
+
+    private static void ObserveFailure(Task task)
+    {
+        task.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private bool RunConverterBounded(FFMpegConverter converter, Action conversion, string videoPath)
+    {
+        var conversionTask = Task.Run(conversion);
+
+        using var timeoutSource = new CancellationTokenSource();
+        var timeout = Task.Delay(_convertTimeout, timeoutSource.Token);
+        var finished = Task.WhenAny(conversionTask, timeout).GetAwaiter().GetResult();
+
+        if (finished == conversionTask)
+        {
+            timeoutSource.Cancel();
+            conversionTask.GetAwaiter().GetResult();
+            return true;
+        }
+
+        _logger.LogWarning("ffmpeg conversion exceeded {TimeoutSeconds}s for {VideoPath}; aborting",
+            _convertTimeout.TotalSeconds, videoPath);
+
+        try
+        {
+            converter.Abort();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to abort the stalled ffmpeg conversion for {VideoPath}", videoPath);
+        }
+
+        ObserveFailure(conversionTask);
+        return false;
     }
 
     public byte[]? ExtractFrame(string videoPath, double timecode)
@@ -140,7 +213,9 @@ public class VideoProcessingService : IVideoProcessingService
 
             _logger.LogInformation("Generating thumbnail for {VideoPath} at {Seek}s", videoPath, frameTime);
 
-            ffmpeg.GetVideoThumbnail(videoPath, ms, frameTime);
+            if (!RunConverterBounded(ffmpeg, () => ffmpeg.GetVideoThumbnail(videoPath, ms, frameTime), videoPath))
+                return null;
+
             return ms.Length > 0 ? ms.ToArray() : null;
         }
         catch (Exception ex)
@@ -174,12 +249,16 @@ public class VideoProcessingService : IVideoProcessingService
             if (slices.Count == 1)
             {
                 using var ms = new MemoryStream();
-                ffmpeg.ConvertMedia(videoPath, null, ms, Format.mp4, new ConvertSettings
-                {
-                    Seek = (float)slices[0].Start,
-                    MaxDuration = (float)slices[0].Duration,
-                    CustomOutputArgs = $"-an -preset ultrafast -vf scale={width}:{height}"
-                });
+                var singleSliceDone = RunConverterBounded(ffmpeg, () =>
+                    ffmpeg.ConvertMedia(videoPath, null, ms, Format.mp4, new ConvertSettings
+                    {
+                        Seek = (float)slices[0].Start,
+                        MaxDuration = (float)slices[0].Duration,
+                        CustomOutputArgs = $"-an -preset ultrafast -vf scale={width}:{height}"
+                    }), videoPath);
+
+                if (!singleSliceDone)
+                    return null;
 
                 _logger.LogInformation("Generated {Resolution} preview for {VideoPath} ({Size} bytes)",
                     resolution, videoPath, ms.Length);
@@ -191,22 +270,32 @@ public class VideoProcessingService : IVideoProcessingService
             for (var i = 0; i < slices.Count; i++)
             {
                 var segFile = Path.Combine(tempDir, $"seg{i}.mp4");
-                ffmpeg.ConvertMedia(videoPath, null, segFile, Format.mp4, new ConvertSettings
-                {
-                    Seek = (float)slices[i].Start,
-                    MaxDuration = (float)slices[i].Duration,
-                    CustomOutputArgs = $"-an -preset ultrafast -vf scale={width}:{height}"
-                });
+                var slice = slices[i];
+                var segmentDone = RunConverterBounded(ffmpeg, () =>
+                    ffmpeg.ConvertMedia(videoPath, null, segFile, Format.mp4, new ConvertSettings
+                    {
+                        Seek = (float)slice.Start,
+                        MaxDuration = (float)slice.Duration,
+                        CustomOutputArgs = $"-an -preset ultrafast -vf scale={width}:{height}"
+                    }), videoPath);
+
+                if (!segmentDone)
+                    return null;
+
                 segmentFiles.Add(segFile);
             }
 
             var outputFile = Path.Combine(tempDir, "preview.mp4");
-            ffmpeg.ConcatMedia(segmentFiles.ToArray(), outputFile, Format.mp4, new ConcatSettings
-            {
-                ConcatVideoStream = true,
-                ConcatAudioStream = false,
-                CustomOutputArgs = "-preset ultrafast"
-            });
+            var concatDone = RunConverterBounded(ffmpeg, () =>
+                ffmpeg.ConcatMedia(segmentFiles.ToArray(), outputFile, Format.mp4, new ConcatSettings
+                {
+                    ConcatVideoStream = true,
+                    ConcatAudioStream = false,
+                    CustomOutputArgs = "-preset ultrafast"
+                }), videoPath);
+
+            if (!concatDone)
+                return null;
 
             var data = File.ReadAllBytes(outputFile);
             _logger.LogInformation(
@@ -223,7 +312,14 @@ public class VideoProcessingService : IVideoProcessingService
         }
         finally
         {
-            try { Directory.Delete(tempDir, true); } catch { }
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete the temporary preview directory {TempDir}", tempDir);
+            }
         }
     }
 }

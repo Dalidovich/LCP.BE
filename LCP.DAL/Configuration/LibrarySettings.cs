@@ -16,6 +16,8 @@ public class LibrarySettings
     public double MaxSyncDeletionRatio { get; set; } = 0.5;
     public long ThumbnailCacheBytes { get; set; } = 64L * 1024 * 1024;
     public long PreviewCacheBytes { get; set; } = 512L * 1024 * 1024;
+    public int FfmpegProbeTimeoutSeconds { get; set; } = 30;
+    public int FfmpegConvertTimeoutSeconds { get; set; } = 300;
 
     public string ResolveSystemFilePath(string relativePath)
     {
