@@ -27,7 +27,11 @@ public class Program
 
         try
         {
-            var builder = WebApplication.CreateBuilder(args);
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                ContentRootPath = AppContext.BaseDirectory,
+            });
 
             builder.Services.AddControllers();
             builder.Services.AddSwaggerGen();
@@ -117,29 +121,30 @@ public class Program
 
             app.UseCors();
 
-            app.UseAuthentication();
+            var spaEnabled = Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot"));
 
-            app.UseAuthorization();
-
-            if (Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot")))
+            if (spaEnabled)
             {
                 app.UseDefaultFiles();
                 app.UseStaticFiles();
-            }
 
-            app.MapControllers();
-
-            if (Directory.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot")))
-            {
                 app.MapWhen(
-                    context => !context.Request.Path.StartsWithSegments("/api"),
+                    context => context.GetEndpoint() is null
+                        && !context.Request.Path.StartsWithSegments("/api"),
                     spa => spa.Run(async context =>
                     {
                         context.Response.ContentType = "text/html";
+                        context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
                         await context.Response.SendFileAsync(
                             Path.Combine(app.Environment.WebRootPath, "index.html"));
                     }));
             }
+
+            app.UseAuthentication();
+
+            app.UseAuthorization();
+
+            app.MapControllers();
 
             Log.Information("Application starting");
             app.Run();
