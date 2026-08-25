@@ -16,16 +16,8 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        var sharedConfigPath = Environment.GetEnvironmentVariable("SHARED_CONFIG_PATH");
-
-        if (!string.IsNullOrEmpty(sharedConfigPath))
-            ValidateSharedConfig(sharedConfigPath);
-
         var configBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory);
-
-        if (!string.IsNullOrEmpty(sharedConfigPath))
-            configBuilder.AddJsonFile(sharedConfigPath, optional: false);
 
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(configBuilder.Build())
@@ -36,9 +28,6 @@ public class Program
         try
         {
             var builder = WebApplication.CreateBuilder(args);
-
-            if (!string.IsNullOrEmpty(sharedConfigPath))
-                builder.Configuration.AddJsonFile(sharedConfigPath, optional: false, reloadOnChange: false);
 
             builder.Services.AddControllers();
             builder.Services.AddSwaggerGen();
@@ -164,51 +153,5 @@ public class Program
         {
             Log.CloseAndFlush();
         }
-    }
-
-    private static void ValidateSharedConfig(string sharedConfigPath)
-    {
-        var sharedOnlyConfig = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile(sharedConfigPath, optional: false)
-            .Build();
-
-        var section = sharedOnlyConfig.GetSection(LibrarySettings.SectionName);
-        var settings = section.Get<LibrarySettings>();
-
-        if (settings == null)
-            throw new InvalidOperationException($"Shared config '{sharedConfigPath}' is missing section: {LibrarySettings.SectionName}");
-
-        var errors = new List<string>();
-        var configKeys = section.GetChildren().Select(c => c.Key).ToList();
-        var optionalKeys = new HashSet<string>
-        {
-            nameof(LibrarySettings.MaxSyncDeletionRatio),
-            nameof(LibrarySettings.ThumbnailCacheBytes),
-            nameof(LibrarySettings.PreviewCacheBytes),
-            nameof(LibrarySettings.FfmpegProbeTimeoutSeconds),
-            nameof(LibrarySettings.FfmpegConvertTimeoutSeconds),
-            nameof(LibrarySettings.MaxUploadBytes)
-        };
-
-        foreach (var prop in typeof(LibrarySettings).GetProperties())
-        {
-            if (optionalKeys.Contains(prop.Name)) continue;
-
-            if (prop.PropertyType == typeof(string))
-            {
-                var value = prop.GetValue(settings) as string;
-                if (string.IsNullOrWhiteSpace(value))
-                    errors.Add($"{LibrarySettings.SectionName}:{prop.Name} (empty or missing)");
-            }
-            else
-            {
-                if (!configKeys.Contains(prop.Name))
-                    errors.Add($"{LibrarySettings.SectionName}:{prop.Name} (missing in config)");
-            }
-        }
-
-        if (errors.Count > 0)
-            throw new InvalidOperationException($"Shared config '{sharedConfigPath}' has invalid fields: {string.Join(", ", errors)}");
     }
 }
