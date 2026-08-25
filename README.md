@@ -114,8 +114,6 @@ Builds the frontend, bundles it into the API and publishes a self-contained sing
 
 ```powershell
 .\build-single-exe.ps1 `
-    -BackendDir "D:\repos\LCP.BE" `
-    -FrontendDir "D:\NodeProject\LCP.FE" `
     -LibraryRootPath "D:\Media" `
     -Password "secret" `
     -Port 5107 `
@@ -125,21 +123,31 @@ Builds the frontend, bundles it into the API and publishes a self-contained sing
 
 | Parameter | Description | Default |
 |---|---|---|
-| `BackendDir` | Path to the LCP.BE repo (must contain `LCP.API`) | required |
-| `FrontendDir` | Path to the LCP.FE project | required |
+| `BackendDir` | Path to the LCP.BE repo (must contain `LCP.API`) | script directory |
+| `FrontendDir` | Path to the LCP.FE project | `..\LCP.FE` |
 | `LibraryRootPath` | Root directory of the video library | required |
-| `Password` | Frontend auth password (empty = no auth) | `""` |
+| `Password` | Password gate; hashed into `PasswordHash`/`PasswordSalt`, never stored in plaintext. Empty = gate disabled | `""` |
 | `SmartVideoGrouping` | Auto-group videos into collections by filename pattern | `$true` |
+| `MaxSyncDeletionRatio` | Fraction of the library a single sync may delete before it aborts | `0.5` |
+| `ThumbnailCacheBytes` | Thumbnail cache budget | `67108864` (64 MB) |
+| `PreviewCacheBytes` | Preview clip cache budget | `536870912` (512 MB) |
+| `FfmpegProbeTimeoutSeconds` | Kill an ffprobe call after this many seconds | `30` |
+| `FfmpegConvertTimeoutSeconds` | Kill an ffmpeg conversion after this many seconds | `300` |
+| `MaxUploadBytes` | Rejection threshold for a single uploaded file | `68719476736` (64 GB) |
+| `CorsAllowedOrigins` | Extra browser origins allowed to call the API; unnecessary for the bundled SPA, which is same-origin | `@()` |
 | `Port` | HTTP port to listen on | `5107` |
 | `ListenAddress` | Bind address (`0.0.0.0` = all interfaces, `127.0.0.1` = local only) | `0.0.0.0` |
-| `OutputDir` | Destination folder for the exe + config | user profile directory |
+| `OutputDir` | Destination folder for the exe + config | `%USERPROFILE%\LCP` |
 | `SkipFrontendBuild` | Reuse the existing frontend `dist` instead of rebuilding | `$false` |
 | `Launch` | Start the built exe after publishing | `$false` |
 
 Notes:
 
-- **Always pass `-OutputDir`.** The script clears the output folder before copying artifacts into it.
-- With an empty `Password` and a non-loopback `ListenAddress`, the script warns that anyone on the LAN can reach the server (including `/api/system/shutdown`).
+- `-LibraryRootPath` is mandatory; the script fails fast without it.
+- **The script wipes `-OutputDir` before copying artifacts into it.** It refuses to run against a drive root, the user profile, `%SystemRoot%`, `%ProgramFiles%`, or either project directory, so point it at a dedicated folder.
+- `-Password` is turned into a PBKDF2-SHA256 hash (100000 iterations, 16-byte salt, 32-byte key) matching `LCP.BLL/Helpers/PasswordHasher`; only the hash and salt reach `appsettings.json`. Rerun the script to change the password.
+- Without `-Password` the password gate is **disabled** and every endpoint stays anonymous; combined with a non-loopback `ListenAddress` the script warns that anyone on the LAN can reach the server (including `/api/system/import` and `/api/system/shutdown`).
+- `appsettings.Development.json` is deleted from the output, so the published exe never exposes Swagger or the development-only `hash-password` endpoint.
 - When run **as Administrator**, the script adds a Windows Firewall inbound rule for TCP `Port` automatically; otherwise it prints the manual `netsh` command. Note that on a **Public** network profile, Windows Firewall blocks inbound traffic for this app regardless, so use a **Private** profile or flip the app rules to Allow.
 - After the build the script prints the local and LAN URLs (`http://<ip>:<port>`).
 - The single-file exe extracts ffmpeg next to the executable on first use (falling back to `%LOCALAPPDATA%\LCP\ffmpeg` only if the exe folder is not writable), because NReco cannot resolve its bundled tools inside a single-file assembly.

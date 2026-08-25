@@ -1,13 +1,20 @@
 [CmdletBinding()]
 param(
-    [string]$BackendDir = "",
+    [string]$BackendDir = $PSScriptRoot,
     [string]$FrontendDir = "",
     [string]$LibraryRootPath = "",
     [string]$Password = "",
     [bool]$SmartVideoGrouping = $true,
+    [double]$MaxSyncDeletionRatio = 0.5,
+    [long]$ThumbnailCacheBytes = 67108864,
+    [long]$PreviewCacheBytes = 536870912,
+    [int]$FfmpegProbeTimeoutSeconds = 30,
+    [int]$FfmpegConvertTimeoutSeconds = 300,
+    [long]$MaxUploadBytes = 68719476736,
+    [string[]]$CorsAllowedOrigins = @(),
     [int]$Port = 5107,
     [string]$ListenAddress = '0.0.0.0',
-    [string]$OutputDir = (Join-Path $env:USERPROFILE ''),
+    [string]$OutputDir = "",
     [switch]$SkipFrontendBuild,
     [switch]$Launch
 )
@@ -16,6 +23,41 @@ $ErrorActionPreference = 'Stop'
 
 function Write-Step([string]$msg) {
     Write-Host "`n=== $msg ===" -ForegroundColor Cyan
+}
+
+function New-PasswordHash([string]$plainPassword) {
+    $saltBytes = New-Object byte[] 16
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($saltBytes) } finally { $rng.Dispose() }
+
+    $pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
+        @($plainPassword, $saltBytes, 100000, [System.Security.Cryptography.HashAlgorithmName]::SHA256))
+    try { $hashBytes = $pbkdf2.GetBytes(32) } finally { $pbkdf2.Dispose() }
+
+    return @{
+        Hash = [Convert]::ToBase64String($hashBytes)
+        Salt = [Convert]::ToBase64String($saltBytes)
+    }
+}
+
+function Assert-SafeOutputDir([string]$path) {
+    $full = [System.IO.Path]::GetFullPath($path)
+    $protected = @(
+        [System.IO.Path]::GetPathRoot($full)
+        $env:USERPROFILE
+        $env:SystemRoot
+        $env:ProgramFiles
+        ${env:ProgramFiles(x86)}
+        $BackendDir
+        $FrontendDir
+    ) | Where-Object { $_ }
+
+    foreach ($candidate in $protected) {
+        if ($full.TrimEnd('\') -ieq [System.IO.Path]::GetFullPath($candidate).TrimEnd('\')) {
+            throw "Refusing to use -OutputDir '$full': the script wipes that directory before copying. Pick a dedicated folder."
+        }
+    }
+    return $full
 }
 
 $ApiProject = Join-Path $BackendDir 'LCP.API'
@@ -27,6 +69,11 @@ if (-not (Test-Path $ApiProject)) {
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw 'dotnet SDK not found in PATH'
 }
+if (-not $LibraryRootPath) {
+    throw 'LibraryRootPath is required, for example: -LibraryRootPath "D:\mycoll"'
+}
+
+$OutputDir = Assert-SafeOutputDir $OutputDir
 
 if (-not $SkipFrontendBuild) {
     Write-Step "Building frontend ($FrontendDir)"
@@ -73,22 +120,44 @@ Write-Step "Publishing single-file exe"
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 Write-Step "Writing appsettings.json"
-$config = @{
-    Logging = @{
-        LogLevel = @{
-            Default = 'Information'
+$passwordHash = ''
+$passwordSalt = ''
+if ($Password) {
+    $credentials = New-PasswordHash $Password
+    $passwordHash = $credentials.Hash
+    $passwordSalt = $credentials.Salt
+}
+
+$settings = [ordered]@{
+    Logging         = [ordered]@{
+        LogLevel = [ordered]@{
+            Default                = 'Information'
             'Microsoft.AspNetCore' = 'Warning'
         }
     }
-    AllowedHosts = '*'
-    Urls = "http://$ListenAddress`:$Port"
-    LibrarySettings = @{
-        LibraryRootPath = $LibraryRootPath
-        Password = $Password
-        SmartVideoGrouping = $SmartVideoGrouping
+    AllowedHosts    = '*'
+    Urls            = "http://$ListenAddress`:$Port"
+    LibrarySettings = [ordered]@{
+        LibraryRootPath             = $LibraryRootPath
+        PasswordHash                = $passwordHash
+        PasswordSalt                = $passwordSalt
+        SmartVideoGrouping          = $SmartVideoGrouping
+        MaxSyncDeletionRatio        = $MaxSyncDeletionRatio
+        ThumbnailCacheBytes         = $ThumbnailCacheBytes
+        PreviewCacheBytes           = $PreviewCacheBytes
+        FfmpegProbeTimeoutSeconds   = $FfmpegProbeTimeoutSeconds
+        FfmpegConvertTimeoutSeconds = $FfmpegConvertTimeoutSeconds
+        MaxUploadBytes              = $MaxUploadBytes
     }
-} | ConvertTo-Json -Depth 5
+}
+
+if ($CorsAllowedOrigins.Count -gt 0) {
+    $settings.Insert(2, 'Cors', [ordered]@{ AllowedOrigins = @($CorsAllowedOrigins) })
+}
+
+$config = $settings | ConvertTo-Json -Depth 6
 Set-Content -Path (Join-Path $PublishDir 'appsettings.json') -Value $config -Encoding UTF8
+Remove-Item (Join-Path $PublishDir 'appsettings.Development.json') -Force -ErrorAction SilentlyContinue
 
 Write-Step "Copying to $OutputDir"
 Get-Process -Name 'LCP.API' -ErrorAction SilentlyContinue |
@@ -134,9 +203,15 @@ if ($lanIps) {
 else {
     Write-Host "LAN access   : (no non-loopback IPv4 address detected)" -ForegroundColor Yellow
 }
-Write-Host "Library path : $LibraryRootPath | Password: $($(if ($Password) { 'set' } else { 'none' }))" -ForegroundColor Green
-if ($Password -eq '' -and $ListenAddress -notlike '127.*' -and $ListenAddress -ne 'localhost') {
-    Write-Warning 'Listening on the network WITHOUT a password - anyone on the LAN can access this server (including Shutdown). Consider -Password "..."'
+Write-Host "Library path : $LibraryRootPath" -ForegroundColor Green
+if ($passwordHash) {
+    Write-Host "Password gate: enabled (PBKDF2-SHA256, 100000 iterations)" -ForegroundColor Green
+}
+else {
+    Write-Host "Password gate: disabled - every endpoint is open" -ForegroundColor Yellow
+}
+if (-not $passwordHash -and $ListenAddress -notlike '127.*' -and $ListenAddress -ne 'localhost') {
+    Write-Warning 'Listening on the network WITHOUT a password - anyone on the LAN can reach every endpoint, including Import and Shutdown. Consider -Password "..."'
 }
 
 if ($Launch) {
