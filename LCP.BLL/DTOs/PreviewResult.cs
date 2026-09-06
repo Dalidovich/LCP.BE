@@ -1,3 +1,3 @@
 namespace LCP.BLL.DTOs;
 
-public record PreviewResult(byte[] Data, DateTime LastModified);
+public record PreviewResult(byte[] Data, DateTime LastModified, string Version);

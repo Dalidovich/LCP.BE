@@ -1,4 +1,4 @@
-﻿using LCP.BLL.DTOs;
+using LCP.BLL.DTOs;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
 using LCP.DAL.Interfaces;
@@ -10,6 +10,13 @@ namespace LCP.BLL.Services;
 
 public class ThumbnailService : IThumbnailService
 {
+    private sealed record ThumbnailRequest(
+        string VideoPath,
+        double Timecode,
+        string CacheKey,
+        string Version,
+        DateTime LastModified);
+
     private readonly IVideoRepository _repository;
     private readonly IVideoProcessingService _videoProcessing;
     private readonly string _libraryRootPath;
@@ -32,7 +39,7 @@ public class ThumbnailService : IThumbnailService
 
     public void InvalidateCache(string videoId)
     {
-        _cache.Remove(videoId);
+        _cache.RemoveWhere(k => k.StartsWith(videoId + "_", StringComparison.Ordinal));
     }
 
     public void ClearAllCache()
@@ -40,56 +47,55 @@ public class ThumbnailService : IThumbnailService
         _cache.Clear();
     }
 
-    public Task<ThumbnailResult?> GetThumbnailAsync(string videoId)
+    public async Task<MediaIdentity?> GetIdentityAsync(string videoId, double? timecode = null)
     {
-        if (_cache.TryGet(videoId, out var cached))
-            return Task.FromResult<ThumbnailResult?>(cached);
-
-        return _inFlight.RunAsync(videoId, () => GenerateAndCacheAsync(videoId));
+        var request = await ResolveAsync(videoId, timecode);
+        return request is null ? null : new MediaIdentity(request.Version, request.LastModified);
     }
 
-    private async Task<ThumbnailResult?> GenerateAndCacheAsync(string videoId)
+    public async Task<ThumbnailResult?> GetThumbnailAsync(string videoId, double? timecode = null)
     {
-        if (_cache.TryGet(videoId, out var cached))
+        var request = await ResolveAsync(videoId, timecode);
+        if (request is null) return null;
+
+        if (_cache.TryGet(request.CacheKey, out var cached))
             return cached;
 
+        return await _inFlight.RunAsync(request.CacheKey, () => GenerateAndCacheAsync(request));
+    }
+
+    private async Task<ThumbnailRequest?> ResolveAsync(string videoId, double? timecode)
+    {
         var video = await _repository.GetByIdAsync(videoId);
         if (video is null) return null;
 
         var videoPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
-        if (!File.Exists(videoPath)) return null;
+        var source = MediaVersion.Probe(videoPath);
+        if (source is null) return null;
 
-        var data = await Task.Run(() => ExtractFrame(videoPath, video.ThumbnailTimecode));
+        var effectiveTimecode = timecode ?? video.ThumbnailTimecode;
+        var discriminator = MediaVersion.Format(effectiveTimecode);
+        var version = MediaVersion.Compute(source.Value, discriminator);
+
+        return new ThumbnailRequest(
+            videoPath,
+            effectiveTimecode,
+            $"{videoId}_{discriminator}_{version}",
+            version,
+            source.Value.LastWriteUtc);
+    }
+
+    private async Task<ThumbnailResult?> GenerateAndCacheAsync(ThumbnailRequest request)
+    {
+        if (_cache.TryGet(request.CacheKey, out var cached))
+            return cached;
+
+        var data = await Task.Run(() => _videoProcessing.ExtractFrame(request.VideoPath, request.Timecode));
         if (data is null) return null;
 
-        var result = new ThumbnailResult(data, TruncateToSecond(DateTime.UtcNow));
+        var result = new ThumbnailResult(data, request.LastModified, request.Version);
 
-        _cache.Set(videoId, result, data.Length);
+        _cache.Set(request.CacheKey, result, data.Length);
         return result;
-    }
-
-    public async Task<ThumbnailResult?> GetThumbnailPreviewAsync(string videoId, double timecode)
-    {
-        var video = await _repository.GetByIdAsync(videoId);
-        if (video is null) return null;
-
-        var videoPath = LibraryPath.Combine(_libraryRootPath, video.RelativePath);
-        if (!File.Exists(videoPath)) return null;
-
-        var data = await Task.Run(() => ExtractFrame(videoPath, timecode));
-        if (data is null) return null;
-
-        return new ThumbnailResult(data, TruncateToSecond(DateTime.UtcNow));
-    }
-
-    private static DateTime TruncateToSecond(DateTime value)
-    {
-        var ticks = value.Ticks;
-        return new DateTime(ticks - ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
-    }
-
-    private byte[]? ExtractFrame(string videoPath, double timecode)
-    {
-        return _videoProcessing.ExtractFrame(videoPath, timecode);
     }
 }

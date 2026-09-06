@@ -157,18 +157,16 @@ public class VideosController : ControllerBase
     [HttpGet("{id}/preview")]
     public async Task<IActionResult> Preview(string id, [FromQuery] PreviewResolution resolution = PreviewResolution.Preview144)
     {
+        var identity = await _previewService.GetIdentityAsync(id, resolution);
+        if (identity is null) return NotFound();
+
+        if (IsNotModified(ApplyValidators(identity)))
+            return StatusCode(StatusCodes.Status304NotModified);
+
         var result = await _previewService.GetPreviewAsync(id, resolution);
         if (result is null) return NotFound();
 
-        var etag = BuildETag(result.LastModified);
-
-        Response.Headers.ETag = etag;
-        Response.Headers.CacheControl = CacheControlValue;
-
-        if (IsNotModified(etag))
-            return StatusCode(StatusCodes.Status304NotModified);
-
-        Response.Headers.LastModified = result.LastModified.ToString("R");
+        ApplyValidators(new MediaIdentity(result.Version, result.LastModified));
         Response.Headers.AcceptRanges = "bytes";
 
         return File(result.Data, "video/mp4", enableRangeProcessing: true);
@@ -177,37 +175,32 @@ public class VideosController : ControllerBase
     [HttpGet("{id}/thumbnail")]
     public async Task<IActionResult> Thumbnail(string id, [FromQuery] double? t = null, [FromQuery] bool noCache = false)
     {
-        ThumbnailResult? result;
+        if (noCache)
+            _thumbnailService.InvalidateCache(id);
 
-        if (t.HasValue)
-        {
-            result = await _thumbnailService.GetThumbnailPreviewAsync(id, t.Value);
-        }
-        else
-        {
-            if (noCache)
-                _thumbnailService.InvalidateCache(id);
-            result = await _thumbnailService.GetThumbnailAsync(id);
-        }
+        var identity = await _thumbnailService.GetIdentityAsync(id, t);
+        if (identity is null) return NotFound();
 
-        if (result is null) return NotFound();
-
-        var etag = BuildETag(result.LastModified);
-
-        Response.Headers.ETag = etag;
-        Response.Headers.CacheControl = CacheControlValue;
-
-        if (IsNotModified(etag))
+        if (!noCache && IsNotModified(ApplyValidators(identity)))
             return StatusCode(StatusCodes.Status304NotModified);
 
-        Response.Headers.LastModified = result.LastModified.ToString("R");
+        var result = await _thumbnailService.GetThumbnailAsync(id, t);
+        if (result is null) return NotFound();
+
+        ApplyValidators(new MediaIdentity(result.Version, result.LastModified));
 
         return File(result.Data, "image/jpeg");
     }
 
-    private static string BuildETag(DateTime lastModified)
+    private string ApplyValidators(MediaIdentity identity)
     {
-        return $"\"{lastModified.Ticks:x}\"";
+        var etag = $"\"{identity.Version}\"";
+
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = CacheControlValue;
+        Response.Headers.LastModified = identity.LastModified.ToString("R");
+
+        return etag;
     }
 
     private bool IsNotModified(string etag)

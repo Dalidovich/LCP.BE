@@ -1,3 +1,3 @@
 namespace LCP.BLL.DTOs;
 
-public record ThumbnailResult(byte[] Data, DateTime LastModified);
+public record ThumbnailResult(byte[] Data, DateTime LastModified, string Version);
