@@ -27,7 +27,7 @@ public class ProductionInfoService : IProductionInfoService
             return await _repository.GetAllAsync();
 
         var filterSet = videoTypeFilter.ToHashSet();
-        var allVideos = await _videoRepository.GetAllRawAsync();
+        var allVideos = await _videoRepository.GetSnapshotAsync();
         var matchingStudios = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var video in allVideos)
         {
@@ -50,7 +50,7 @@ public class ProductionInfoService : IProductionInfoService
 
     private async Task<IReadOnlyList<ProductionInfoDto>> ComputeInfoAsync(List<VideoType>? videoTypeFilter)
     {
-        var allVideos = await _videoRepository.GetAllRawAsync();
+        var allVideos = await _videoRepository.GetSnapshotAsync();
         var filtered = videoTypeFilter is { Count: > 0 }
             ? allVideos.Where(v => videoTypeFilter.Contains(v.Type)).ToList()
             : allVideos;

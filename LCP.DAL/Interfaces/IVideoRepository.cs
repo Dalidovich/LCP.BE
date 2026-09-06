@@ -4,11 +4,10 @@ namespace LCP.DAL.Interfaces;
 
 public interface IVideoRepository
 {
-    Task<List<VideoMetadata>> GetAllRawAsync();
+    Task<IReadOnlyList<VideoMetadata>> GetSnapshotAsync();
     Task<VideoMetadata?> GetByIdAsync(string id);
-    Task<List<VideoMetadata>> GetByCollectionIdAsync(string collectionId);
+    Task<IReadOnlyList<VideoMetadata>> GetByCollectionIdAsync(string collectionId);
     Task<List<(string Id, int Count)>> GetAllCollectionIdsAsync();
-    Task<(List<VideoMetadata> Items, int TotalCount)> GetPagedAsync(int page, int pageSize);
     Task SaveAllAsync(List<VideoMetadata> videos);
     Task<T> MutateAsync<T>(Func<List<VideoMetadata>, (bool Changed, T Result)> mutation);
     Task InvalidateCacheAsync();

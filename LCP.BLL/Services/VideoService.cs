@@ -1,4 +1,4 @@
-﻿using LCP.BLL.DTOs;
+using LCP.BLL.DTOs;
 using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
@@ -53,49 +53,28 @@ public class VideoService : IVideoService
 
     public async Task<List<VideoDto>> GetAllAsync(string? search = null)
     {
-        var videos = await _repository.GetAllRawAsync();
-        List<VideoMetadata> ordered;
+        var videos = await _repository.GetSnapshotAsync();
+        var settings = await _settingsRepository.GetAsync();
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            ordered = videos
-                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= SearchHelper.MinScore)
-                .OrderByDescending(x => x.Score)
-                .Select(x => x.Video)
-                .ToList();
-        }
-        else
-        {
-            ordered = await ApplyOrderingAsync(videos);
-        }
+        var ordered = string.IsNullOrWhiteSpace(search)
+            ? ApplyOrdering(videos, settings)
+            : RankBySearch(videos, search);
 
-        ordered = await FilterByTypeAsync(ordered);
-        return ordered.Select(MapToDto).ToList();
+        return [.. FilterByType(ordered, settings).Select(MapToDto)];
     }
 
     public async Task<PagedResult<VideoDto>> GetPagedAsync(int page, int pageSize, List<string>? tags = null, List<string>? productionInfo = null, string? search = null)
     {
-        var videos = await _repository.GetAllRawAsync();
-        List<VideoMetadata> ordered;
+        var videos = await _repository.GetSnapshotAsync();
+        var settings = await _settingsRepository.GetAsync();
+        var hasSearch = !string.IsNullOrWhiteSpace(search);
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            ordered = videos
-                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= SearchHelper.MinScore)
-                .OrderByDescending(x => x.Score)
-                .Select(x => x.Video)
-                .ToList();
-        }
-        else
-        {
-            ordered = await ApplyOrderingAsync(videos);
-        }
+        var ordered = hasSearch
+            ? RankBySearch(videos, search!)
+            : ApplyOrdering(videos, settings);
 
-        ordered = await FilterByTypeAsync(ordered);
-
-        ordered = ApplyMatchFilters(ordered, tags, productionInfo, preserveExistingOrder: !string.IsNullOrWhiteSpace(search));
+        ordered = FilterByType(ordered, settings);
+        ordered = ApplyMatchFilters(ordered, tags, productionInfo, preserveExistingOrder: hasSearch);
 
         var totalCount = ordered.Count;
         var items = ordered
@@ -120,27 +99,15 @@ public class VideoService : IVideoService
 
     public async Task<PagedResult<VideoDto>> GetByCollectionIdAsync(string collectionId, int page = 1, int pageSize = 20, string? search = null)
     {
-        var videos = await _repository.GetByCollectionIdAsync(collectionId);
-        videos = await FilterByTypeAsync(videos);
+        var settings = await _settingsRepository.GetAsync();
+        var videos = FilterByType(await _repository.GetByCollectionIdAsync(collectionId), settings);
 
-        List<VideoMetadata> ordered;
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            ordered = videos
-                .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
-                .Where(x => x.Score >= SearchHelper.MinScore)
-                .OrderByDescending(x => x.Score)
-                .Select(x => x.Video)
-                .ToList();
-        }
-        else
-        {
-            ordered = videos
+        IReadOnlyList<VideoMetadata> ordered = string.IsNullOrWhiteSpace(search)
+            ? [.. videos
                 .OrderBy(v => v.EpisodeNumber < 0 ? 1 : 0)
                 .ThenBy(v => v.EpisodeNumber)
-                .ThenBy(v => v.SystemName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
+                .ThenBy(v => v.SystemName, StringComparer.OrdinalIgnoreCase)]
+            : RankBySearch(videos, search);
 
         var totalCount = ordered.Count;
         var items = ordered
@@ -159,9 +126,9 @@ public class VideoService : IVideoService
 
     public async Task<PagedResult<CollectionDto>> GetAllCollectionIdsAsync(int page = 1, int pageSize = 20, string? search = null)
     {
-        var videos = await _repository.GetAllRawAsync();
-        var filtered = await FilterByTypeAsync(videos);
-        var collections = filtered
+        var videos = await _repository.GetSnapshotAsync();
+        var settings = await _settingsRepository.GetAsync();
+        var collections = FilterByType(videos, settings)
             .GroupBy(v => v.CollectionId ?? "default")
             .Select(g => (Id: g.Key, Count: g.Count()))
             .OrderBy(c => c.Id)
@@ -353,8 +320,9 @@ public class VideoService : IVideoService
 
     public async Task<VideoDto?> GetRandomAsync()
     {
-        var videos = await _repository.GetAllRawAsync();
-        var filtered = await FilterByTypeAsync(videos);
+        var videos = await _repository.GetSnapshotAsync();
+        var settings = await _settingsRepository.GetAsync();
+        var filtered = FilterByType(videos, settings);
         if (filtered.Count == 0) return null;
         var idx = Random.Shared.Next(filtered.Count);
         return MapToDto(filtered[idx]);
@@ -368,11 +336,12 @@ public class VideoService : IVideoService
         var tags = source.Tags.Select(t => t.ToLowerInvariant()).ToList();
         if (tags.Count == 0) return new PagedResult<VideoDto> { Page = page, PageSize = pageSize };
 
-        var allVideos = await _repository.GetAllRawAsync();
-        var filtered = allVideos.Where(v => v.Id != id).ToList();
+        var allVideos = await _repository.GetSnapshotAsync();
+        var settings = await _settingsRepository.GetAsync();
+        var candidates = allVideos.Where(v => v.Id != id);
         if (!string.IsNullOrEmpty(source.CollectionId))
-            filtered = filtered.Where(v => v.CollectionId != source.CollectionId).ToList();
-        filtered = await FilterByTypeAsync(filtered);
+            candidates = candidates.Where(v => v.CollectionId != source.CollectionId);
+        var filtered = FilterByType([.. candidates], settings);
 
         var scored = ScoreAndInterleave(tags, filtered);
         var totalCount = scored.Count;
@@ -389,7 +358,7 @@ public class VideoService : IVideoService
         };
     }
 
-    private List<VideoDto> ScoreAndInterleave(List<string> queryTags, List<VideoMetadata> videos)
+    private List<VideoDto> ScoreAndInterleave(List<string> queryTags, IReadOnlyList<VideoMetadata> videos)
     {
         var querySet = queryTags.ToHashSet();
         var maxTagCount = queryTags.Count;
@@ -423,18 +392,24 @@ public class VideoService : IVideoService
         return result;
     }
 
-    private async Task<List<VideoMetadata>> FilterByTypeAsync(List<VideoMetadata> videos)
+    private static IReadOnlyList<VideoMetadata> RankBySearch(IEnumerable<VideoMetadata> videos, string search) =>
+        [.. videos
+            .Select(v => (Video: v, Score: SearchHelper.ScoreVideo(v, search)))
+            .Where(x => x.Score >= SearchHelper.MinScore)
+            .OrderByDescending(x => x.Score)
+            .Select(x => x.Video)];
+
+    private static IReadOnlyList<VideoMetadata> FilterByType(IReadOnlyList<VideoMetadata> videos, SiteSettings? settings)
     {
-        var settings = await _settingsRepository.GetAsync();
         if (settings?.VideoTypeFilter is not { Count: > 0 })
             return videos;
 
         var filterSet = settings.VideoTypeFilter.ToHashSet();
-        return videos.Where(v => filterSet.Contains(v.Type)).ToList();
+        return [.. videos.Where(v => filterSet.Contains(v.Type))];
     }
 
-    private static List<VideoMetadata> ApplyMatchFilters(
-        List<VideoMetadata> videos,
+    private static IReadOnlyList<VideoMetadata> ApplyMatchFilters(
+        IReadOnlyList<VideoMetadata> videos,
         List<string>? tags,
         List<string>? productionInfo,
         bool preserveExistingOrder)
@@ -458,12 +433,11 @@ public class VideoService : IVideoService
             scored = scored.OrderByDescending(x => x.TagMatches + x.ProductionInfoMatches);
         }
 
-        return scored.Select(x => x.Video).ToList();
+        return [.. scored.Select(x => x.Video)];
     }
 
-    private async Task<List<VideoMetadata>> ApplyOrderingAsync(List<VideoMetadata> videos)
+    private IReadOnlyList<VideoMetadata> ApplyOrdering(IReadOnlyList<VideoMetadata> videos, SiteSettings? settings)
     {
-        var settings = await _settingsRepository.GetAsync();
         if (settings is null) return videos;
 
         var seed = _randomSortSeedProvider.GetSeed(settings.RandomSort);
@@ -471,12 +445,12 @@ public class VideoService : IVideoService
         if (settings.RandomSort)
         {
             var rng = new Random(seed);
-            return videos.OrderBy(_ => rng.Next()).ToList();
+            return [.. videos.OrderBy(_ => rng.Next())];
         }
 
         if (settings.StatisticsMode)
         {
-            return videos.OrderBy(v => v.LastTimeWatched ?? DateTime.MinValue).ToList();
+            return [.. videos.OrderBy(v => v.LastTimeWatched ?? DateTime.MinValue)];
         }
 
         return videos;

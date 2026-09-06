@@ -10,11 +10,7 @@ public class JsonVideoRepository : IVideoRepository
 {
     private readonly string _filePath;
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private List<VideoMetadata>? _cache;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
+    private IReadOnlyList<VideoMetadata>? _cache;
 
     public JsonVideoRepository(IOptions<LibrarySettings> settings)
     {
@@ -33,13 +29,12 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
-    public async Task<List<VideoMetadata>> GetAllRawAsync()
+    public async Task<IReadOnlyList<VideoMetadata>> GetSnapshotAsync()
     {
         await _lock.WaitAsync();
         try
         {
-            _cache ??= await LoadAsync();
-            return [.. _cache.Select(v => v.Clone())];
+            return _cache ??= await LoadAsync();
         }
         finally
         {
@@ -47,72 +42,26 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
-    public async Task<List<VideoMetadata>> GetByCollectionIdAsync(string collectionId)
+    public async Task<IReadOnlyList<VideoMetadata>> GetByCollectionIdAsync(string collectionId)
     {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            return [.. _cache.Where(v => v.CollectionId == collectionId).Select(v => v.Clone())];
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        var snapshot = await GetSnapshotAsync();
+        return [.. snapshot.Where(v => v.CollectionId == collectionId)];
     }
 
     public async Task<List<(string Id, int Count)>> GetAllCollectionIdsAsync()
     {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            return _cache
-                .Where(v => v.CollectionId is not null)
-                .GroupBy(v => v.CollectionId!)
-                .Select(g => (Id: g.Key, Count: g.Count()))
-                .ToList();
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        var snapshot = await GetSnapshotAsync();
+        return snapshot
+            .Where(v => v.CollectionId is not null)
+            .GroupBy(v => v.CollectionId!)
+            .Select(g => (Id: g.Key, Count: g.Count()))
+            .ToList();
     }
 
     public async Task<VideoMetadata?> GetByIdAsync(string id)
     {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            return _cache.FirstOrDefault(v => v.Id == id)?.Clone();
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
-
-    public async Task<(List<VideoMetadata> Items, int TotalCount)> GetPagedAsync(int page, int pageSize)
-    {
-        await _lock.WaitAsync();
-        try
-        {
-            _cache ??= await LoadAsync();
-            var totalCount = _cache.Count;
-            List<VideoMetadata> items =
-            [
-                .. _cache
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(v => v.Clone())
-            ];
-            return (items, totalCount);
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        var snapshot = await GetSnapshotAsync();
+        return snapshot.FirstOrDefault(v => v.Id == id);
     }
 
     public async Task SaveAllAsync(List<VideoMetadata> videos)
@@ -120,16 +69,7 @@ public class JsonVideoRepository : IVideoRepository
         await _lock.WaitAsync();
         try
         {
-            _cache = [.. videos.Select(v => v.Clone())];
-            try
-            {
-                await SaveAsync(videos);
-            }
-            catch
-            {
-                _cache = null;
-                throw;
-            }
+            await PublishAsync([.. videos.Select(v => v.Clone())]);
         }
         finally
         {
@@ -142,19 +82,13 @@ public class JsonVideoRepository : IVideoRepository
         await _lock.WaitAsync();
         try
         {
-            _cache ??= await LoadAsync();
-            var (changed, result) = mutation(_cache);
+            var current = _cache ??= await LoadAsync();
+            var working = current.Select(v => v.Clone()).ToList();
+
+            var (changed, result) = mutation(working);
             if (changed)
             {
-                try
-                {
-                    await SaveAsync(_cache);
-                }
-                catch
-                {
-                    _cache = null;
-                    throw;
-                }
+                await PublishAsync(working);
             }
             return result;
         }
@@ -164,9 +98,9 @@ public class JsonVideoRepository : IVideoRepository
         }
     }
 
-    public Task InvalidateCacheAsync()
+    public async Task InvalidateCacheAsync()
     {
-        _lock.Wait();
+        await _lock.WaitAsync();
         try
         {
             _cache = null;
@@ -175,7 +109,20 @@ public class JsonVideoRepository : IVideoRepository
         {
             _lock.Release();
         }
-        return Task.CompletedTask;
+    }
+
+    private async Task PublishAsync(List<VideoMetadata> videos)
+    {
+        try
+        {
+            await SaveAsync(videos);
+        }
+        catch
+        {
+            _cache = null;
+            throw;
+        }
+        _cache = videos;
     }
 
     private async Task<List<VideoMetadata>> LoadAsync()
@@ -183,14 +130,14 @@ public class JsonVideoRepository : IVideoRepository
         if (string.IsNullOrEmpty(_filePath)) return [];
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<List<VideoMetadata>>(json) ?? [];
+        return JsonSerializer.Deserialize<List<VideoMetadata>>(json, JsonStore.Options) ?? [];
     }
 
     private async Task SaveAsync(List<VideoMetadata> data)
     {
         if (string.IsNullOrEmpty(_filePath)) return;
 
-        var json = JsonSerializer.Serialize(data, JsonOptions);
+        var json = JsonSerializer.Serialize(data, JsonStore.Options);
         await File.WriteAllTextAsync(_filePath, json);
     }
 }

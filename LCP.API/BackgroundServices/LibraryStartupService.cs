@@ -75,7 +75,7 @@ public class LibraryStartupService : BackgroundService
             return;
         }
 
-        var allEntries = await _videoRepository.GetAllRawAsync();
+        var allEntries = await _videoRepository.GetSnapshotAsync();
         if (allEntries.Count == 0)
         {
             var rootPath = _settings.LibraryRootPath;
@@ -172,7 +172,7 @@ public class LibraryStartupService : BackgroundService
 
     private async Task SeedTagsAsync(CancellationToken stoppingToken)
     {
-        var allEntries = await _videoRepository.GetAllRawAsync();
+        var allEntries = await _videoRepository.GetSnapshotAsync();
         var tags = allEntries
             .SelectMany(v => v.Tags)
             .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -192,7 +192,7 @@ public class LibraryStartupService : BackgroundService
 
     private async Task SeedProductionInfoAsync(CancellationToken stoppingToken)
     {
-        var allEntries = await _videoRepository.GetAllRawAsync();
+        var allEntries = await _videoRepository.GetSnapshotAsync();
         var studios = allEntries
             .SelectMany(v => v.ProductionInfo)
             .Where(t => !string.IsNullOrWhiteSpace(t))

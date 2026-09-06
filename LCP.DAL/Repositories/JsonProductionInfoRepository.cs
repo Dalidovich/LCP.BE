@@ -10,10 +10,6 @@ public class JsonProductionInfoRepository : IProductionInfoRepository
     private readonly string _filePath;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private List<string>? _cache;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
 
     public JsonProductionInfoRepository(IOptions<LibrarySettings> settings)
     {
@@ -82,9 +78,9 @@ public class JsonProductionInfoRepository : IProductionInfoRepository
         }
     }
 
-    public Task InvalidateCacheAsync()
+    public async Task InvalidateCacheAsync()
     {
-        _lock.Wait();
+        await _lock.WaitAsync();
         try
         {
             _cache = null;
@@ -93,7 +89,6 @@ public class JsonProductionInfoRepository : IProductionInfoRepository
         {
             _lock.Release();
         }
-        return Task.CompletedTask;
     }
 
     private async Task<List<string>> LoadAsync()
@@ -101,14 +96,14 @@ public class JsonProductionInfoRepository : IProductionInfoRepository
         if (string.IsNullOrEmpty(_filePath)) return [];
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        return JsonSerializer.Deserialize<List<string>>(json, JsonStore.Options) ?? [];
     }
 
     private async Task SaveAsync(List<string> data)
     {
         if (string.IsNullOrEmpty(_filePath)) return;
 
-        var json = JsonSerializer.Serialize(data, JsonOptions);
+        var json = JsonSerializer.Serialize(data, JsonStore.Options);
         await File.WriteAllTextAsync(_filePath, json);
     }
 }

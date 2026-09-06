@@ -8,16 +8,17 @@
 
 | Layer | Project | Subfolders | Purpose |
 |---|---|---|---|
-| Presentation | `LCP.API` | `Controllers/`, `Middleware/`, `BackgroundServices/` | REST API controllers, middleware, config |
+| Presentation | `LCP.API` | `Controllers/`, `Middleware/`, `BackgroundServices/`, `Authorization/` | REST API controllers, middleware, config |
 | Business Logic | `LCP.BLL` | `Interfaces/`, `Services/`, `DTOs/` | Services, DTOs, mapping |
 | Data Access | `LCP.DAL` | `Interfaces/`, `Repositories/`, `Configuration/` | Repositories, JSON file I/O |
 | Domain | `LCP.Domain` | `Entities/` | Entities only |
+| Tests | `LCP.Tests` | `Entities/`, `Helpers/`, `Services/`, `Fakes/` | xUnit coverage of the pure logic |
 
 **Dependency flow:** `API → BLL → DAL → Domain` (no reverse dependencies)
 
 **Notes:**
-- `LCP.BLL/Helpers/` contains `FFProbeHelper.cs`, `SearchHelper.cs`
-- No test project exists yet
+- `LCP.BLL/Helpers/` contains `PasswordGate.cs`, `PasswordHasher.cs`, `RelocationMatcher.cs`, `SearchHelper.cs`
+- `LCP.Tests` (xUnit, `net9.0`) covers the pure logic: `SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService`. Run with `dotnet test`
 
 ## Data Model
 
@@ -32,6 +33,7 @@ CollectionId    : string?  (optional grouping, like a series/collection)
 EpisodeNumber   : int      (default -1)
 Type            : VideoType (enum: Anime=0, Film=1)
 Tags            : List<string>
+ProductionInfo  : List<string>
 ThumbnailTimecode : double (default -1; seek position for thumbnail generation)
 Duration        : double   (total seconds, set via ffmpeg on seed/sync)
 LastTimeWatched : DateTime? (tracked via PATCH for StatisticsMode ordering)
@@ -87,7 +89,12 @@ class SiteSettings {
     "collectionId": "Sci-Fi",
     "episodeNumber": -1,
     "type": 1,
-    "tags": ["sci-fi"]
+    "tags": ["sci-fi"],
+    "productionInfo": ["Studio A"],
+    "thumbnailTimecode": 2,
+    "duration": 8880,
+    "lastTimeWatched": null,
+    "previewSlices": [{ "start": 10, "duration": 5 }]
   }
 ]
 ```
@@ -110,9 +117,12 @@ class SiteSettings {
   "warmCache": false,
   "randomSort": false,
   "debug": false,
-  "statisticsMode": false
+  "statisticsMode": false,
+  "videoTypeFilter": []
 }
 ```
+
+**JSON casing** — every store is read and written through `JsonStore.Options` (`LCP.DAL/Repositories/JsonStore.cs`): `WriteIndented`, `PropertyNamingPolicy = CamelCase` and `PropertyNameCaseInsensitive`. Files are written in camelCase, exactly as documented above, and PascalCase files written by older builds still load. Never deserialize a store without those options — a casing mismatch silently yields default values instead of failing.
 
 ## Configuration (`appsettings.json`)
 
@@ -157,9 +167,9 @@ class SiteSettings {
 
 | Method | Route | Description |
 |---|---|---|
-| GET | `/api/videos` | List all videos (including deleted, marked with `isDeleted`) |
-| GET | `/api/videos/paged?page=1&pageSize=20&tags=sci-fi&tags=thriller` | Paginated list (non-deleted only). Optional `tags` param filters by any matching tag |
-| GET | `/api/videos/{id}` | Get single video (even if deleted) |
+| GET | `/api/videos` | List all videos. Optional `search` param ranks by trigram score. There is no delete endpoint and no soft-delete flag: entries leave the library only when sync finds their file gone |
+| GET | `/api/videos/paged?page=1&pageSize=20&tags=sci-fi&tags=thriller` | Paginated list. Optional `tags` / `productionInfo` params filter by any matching value, `search` ranks by trigram score |
+| GET | `/api/videos/{id}` | Get single video |
 | PATCH | `/api/videos/{id}` | Update metadata fields (NameEn, NameLocal, CollectionId, EpisodeNumber, Type, Tags, ThumbnailTimecode, LastTimeWatched) |
 | GET | `/api/videos/{id}/similar?page=1&pageSize=20` | Paginated similar videos by tag overlap (see Scoring Algorithm below) |
 | GET | `/api/videos/{id}/stream` | Stream full video file with range processing support (Content-Type mapped by extension) |
@@ -214,7 +224,7 @@ Both phases run once per startup, sequentially, so they never race on `library.j
 
 ## Similar Videos Scoring Algorithm
 
-Uses `ScoreAndInterleave` in `VideoService.cs:202`:
+Uses `ScoreAndInterleave` in `VideoService.cs`:
 1. For each other video, count matching tags and compute overlap percentage: `matchCount / max(queryTagCount, videoTagCount)`
 2. Sort by `matchCount` descending then by `percent` descending → list A
 3. Sort by `percent` descending then by `matchCount` descending → list B
@@ -236,10 +246,10 @@ Generation itself is deduplicated per cache key by `InFlightCoalescer<T>` in `Th
 
 Sync resolves moved files before pruning, so moving a video to another folder keeps its `Id` and all metadata (tags, names, `CollectionId`, `ThumbnailTimecode`, `LastTimeWatched`, `PreviewSlices`) instead of dropping the entry and re-adding the file as a new one. Thumbnail/preview caches are keyed by `Id`, so they stay valid too.
 
-`LibrarySyncService.MatchRelocations` pairs entries with no file on disk against files on disk with no entry:
+`RelocationMatcher.Match` (`LCP.BLL/Helpers/RelocationMatcher.cs`) pairs entries with no file on disk against files on disk with no entry. It is a pure function over (missing entries, untracked paths, probed durations), so it is covered directly by `LCP.Tests`:
 
 1. Candidates must share the exact file name (with extension, `OrdinalIgnoreCase`). A renamed file is never matched.
-2. Within a file-name group, pairs are first resolved by duration: an entry matches when exactly one untracked path is within `RelocationDurationToleranceSeconds` (1s) of its stored `Duration` **and** that path is within tolerance of exactly one entry. Durations of `0` (unknown / failed probe) never match here.
+2. Within a file-name group, pairs are first resolved by duration: an entry matches when exactly one untracked path is within `RelocationMatcher.DurationToleranceSeconds` (1s) of its stored `Duration` **and** that path is within tolerance of exactly one entry. Durations of `0` (unknown / failed probe) never match here.
 3. Leftovers pair only when exactly one entry and one path remain in the group, and their durations do not conflict (both known and more than 1s apart). This covers entries seeded before durations were probed.
 4. Ambiguous groups (several same-named files moved at once with indistinguishable durations) are left alone and fall through to the normal prune/add path.
 
@@ -275,18 +285,21 @@ All videos are included in grouping logic.
 ## Key Conventions
 
 - **Create endpoint** — `POST /api/videos/new` uploads video files; JSON file is also managed via seed/sync services
-- **Trigram search** — `GET /api/videos?search=` uses trigram fuzzy matching on video names (not substring comparison). `SearchHelper.TrigramSimilarity(text, query)` scores word-boundary padded trigrams (`pg_trgm` convention: two leading spaces, one trailing per word) with the Jaccard coefficient (`intersection / union`), then combines it with a directional affinity boost — `0.8` when the query starts the title or any word in it, `0.6` when it merely occurs inside, both scaled by `min(1, queryLength / 3)` so one- and two-character queries cannot claim a full match — via `jaccard + (1 - jaccard) * affinity`. `SearchHelper.ScoreVideo` takes the best score across `SystemName`, `NameEn`, `NameLocal`; the inclusion cutoff is the public `SearchHelper.MinScore` (`0.25`), the single home of the threshold — `VideoService` filters on it rather than a literal
+- **Trigram search** — `GET /api/videos?search=` uses trigram fuzzy matching on video names (not substring comparison). `SearchHelper.TrigramSimilarity(text, query)` scores word-boundary padded trigrams (`pg_trgm` convention: two leading spaces, one trailing per word) with the Jaccard coefficient (`intersection / union`), then combines it with a directional affinity boost — `0.8` when the query starts the title or any word in it, `0.6` when it merely occurs inside, both scaled by `min(1, queryLength / 3)` so one- and two-character queries cannot claim a full match — via `jaccard + (1 - jaccard) * affinity`. `SearchHelper.ScoreVideo` takes the best score across `SystemName`, `NameEn`, `NameLocal`; the inclusion cutoff is the public `SearchHelper.MinScore` (`0.25`), the single home of the threshold — `VideoService` filters on it rather than a literal. The three list endpoints share one `VideoService.RankBySearch` helper, so search ranking has a single definition
 - **Media cache identity** — `MediaVersion` (`LCP.BLL/Services/MediaVersion.cs`) derives a deterministic version from the source file (`LastWriteTimeUtc` truncated to whole seconds + byte length) plus a per-request discriminator, as the first 8 bytes of a SHA-256 over the three. Never use `DateTime.UtcNow`: the version has to survive a cache eviction and a process restart, otherwise every restart re-downloads every image. Doubles enter the discriminator via `MediaVersion.Format` (`"R"`, invariant) so a value that round-trips through JSON hashes identically. The version is part of the cache key, so a video edited on disk yields a new key instead of a stale hit, and `Last-Modified` reports the source file's mtime.
 - **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`MediaCache<ThumbnailResult>` keyed by `{id}_{timecode}_{version}` — byte-bounded LRU, limit `LibrarySettings.ThumbnailCacheBytes`, default 64 MB). `GetThumbnailAsync(id, timecode = null)` is the only entry point: a null timecode resolves to the stored `ThumbnailTimecode`, so `?t=` at the stored value shares the entry that warmup and the plain URL populate. Scrubbing at other timecodes is cached and coalesced too. Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`, both by key prefix.
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory as `MediaCache<PreviewResult>` keyed by `{id}_{resolution}_{version}`, where the version covers the resolution and the slice list — byte-bounded LRU, limit `LibrarySettings.PreviewCacheBytes`, default 512 MB. Regenerated slices therefore produce a new key and a new ETag. `InvalidateCache(id)` removes every resolution by key prefix. Single-slice previews use direct conversion without temp files.
 - **Conditional requests** — `VideosController` resolves `GetIdentityAsync` first and answers `304` **before** calling the generating method. Never generate and then compare: on a cold cache a revalidation would otherwise cost a full ffmpeg run for a body that is never sent. After generating, `ApplyValidators` re-stamps the headers from the result so the served bytes and the ETag cannot disagree.
-- **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance. Reads return detached deep copies (`VideoMetadata.Clone()`, `SiteSettings.Clone()`), so caller mutations never reach the cache until `SaveAllAsync`/`UpdateAsync`
-- **Read-modify-write on videos** — never `GetAllRawAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate. When the persist throws, `MutateAsync` and `SaveAllAsync` drop the in-memory cache before rethrowing, so the next read reloads the last state that actually reached disk
+- **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance. `InvalidateCacheAsync` awaits that semaphore like every other member; never block on it with `Wait()` from an async method
+- **Video cache is copy-on-write** — `JsonVideoRepository` holds one immutable `IReadOnlyList<VideoMetadata>` snapshot. `GetSnapshotAsync()`, `GetByIdAsync()` and `GetByCollectionIdAsync()` hand out that shared instance without cloning, so a list request costs no deep copy of the library. In exchange **callers must treat everything a read returns as read-only**. Writes go through `MutateAsync`/`SaveAllAsync`, which deep-copy once, mutate the copy and publish it as the new snapshot only after the file write succeeds — so entries in a snapshot already handed out are never mutated underneath a reader, and a failed write leaves no unsaved state visible
+- **Read-modify-write on videos** — never `GetSnapshotAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate. When the persist throws, `MutateAsync` and `SaveAllAsync` drop the in-memory cache before rethrowing, so the next read reloads the last state that actually reached disk
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
 - **CORS** — restricted to an explicit origin list from `Cors:AllowedOrigins` (defaults to `http://localhost:4200` when absent or empty); any header/method allowed, credentials allowed. Both supported deployments are same-origin (dev proxy via `LCP.FE/proxy.conf.json`, prod SPA served from `wwwroot`), so no wildcard origin is needed
 - **Global error handling** — `ExceptionHandlingMiddleware` catches unhandled exceptions, logs them with path/method, returns JSON `{ error, statusCode }` with 500. If the response has already started (streaming endpoints: export, video stream/preview), it logs and calls `context.Abort()` instead of writing — the client sees a broken transfer rather than a truncated body with `200 OK`. Client disconnects (`OperationCanceledException` with `RequestAborted`) are logged at information level, not as errors
 - **Logging** — Serilog to console only (no file output)
 - **Nullable enabled** — follow `?` annotations for nullable reference types
+- **One settings read per request** — `VideoService` reads `ISettingsRepository.GetAsync()` once per public method and threads the result through `ApplyOrdering` / `FilterByType`; those helpers are static and take `SiteSettings?` rather than fetching it themselves
+- **Tests** — `LCP.Tests` covers the pure logic (`SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService` via `InMemoryVideoRepository`). New pure functions belong there; keep them free of file and ffmpeg I/O so they stay testable
 - **No comments in code** — keep source files clean
 - **RandomSort** — when enabled, videos in `GET /api/videos`, `GET /api/videos/paged`, and `GET /api/collections/{id}/videos` are shuffled deterministically using a seed that persists per server start and regenerates when RandomSort is toggled off→on. This guarantees no duplicates or gaps across pagination requests since the order is stable for the same seed.
 - **Filters never reorder** — tag and studio filters in `GET /api/videos/paged` are pure `Where` predicates (a video must match at least one selected tag AND at least one selected studio when both are supplied). Ordering precedence is: search relevance when a search term is present, otherwise a single descending sort by combined match score (tag matches + studio matches) with the base ordering (`RandomSort` / `StatisticsMode`) preserved within equal scores by the stable sort. Never re-sort after `ApplyOrderingAsync`.
@@ -298,6 +311,7 @@ All videos are included in grouping logic.
 
 ```powershell
 dotnet build
+dotnet test
 dotnet run --project LCP.API
 ```
 
@@ -314,14 +328,16 @@ Swagger UI at `/swagger` — development environment only (`ASPNETCORE_ENVIRONME
 - `Microsoft.Extensions.Options` 9.0.3 (LCP.DAL)
 - `Microsoft.Extensions.Logging.Abstractions` 9.0.3 (LCP.BLL)
 - `NReco.VideoConverter` 1.2.1 (LCP.BLL — bundles ffmpeg/ffprobe binaries)
+- `xunit` 2.9.2, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.12.0, `coverlet.collector` 6.0.2 (LCP.Tests)
 
 ## Project References
 
 ```
-LCP.API → LCP.BLL, LCP.DAL
-LCP.BLL → LCP.DAL, LCP.Domain
-LCP.DAL → LCP.Domain
+LCP.API   → LCP.BLL, LCP.DAL
+LCP.BLL   → LCP.DAL, LCP.Domain
+LCP.DAL   → LCP.Domain
 LCP.Domain → (none)
+LCP.Tests → LCP.BLL, LCP.DAL, LCP.Domain
 ```
 
 ## Service and Repository Layer Overview
@@ -330,7 +346,7 @@ LCP.Domain → (none)
 
 | Interface | Methods |
 |---|---|
-| `IVideoRepository` | `GetAllRawAsync()`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `GetPagedAsync(page, pageSize)`, `SaveAllAsync(videos)`, `MutateAsync&lt;T&gt;(Func&lt;List&lt;VideoMetadata&gt;, (bool Changed, T Result)&gt;)` — atomic read-modify-write, `InvalidateCacheAsync()` |
+| `IVideoRepository` | `GetSnapshotAsync()` → shared read-only snapshot, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `SaveAllAsync(videos)`, `MutateAsync&lt;T&gt;(Func&lt;List&lt;VideoMetadata&gt;, (bool Changed, T Result)&gt;)` — atomic read-modify-write, `InvalidateCacheAsync()` |
 | `ITagRepository` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)` |
 | `ISettingsRepository` | `GetAsync()`, `UpdateAsync(settings)` |
 
@@ -338,7 +354,7 @@ LCP.Domain → (none)
 
 | Interface | Methods |
 |---|---|
-| `IVideoService` | `GetAllAsync()`, `GetPagedAsync(page, pageSize, tags?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
+| `IVideoService` | `GetAllAsync(search?)`, `GetPagedAsync(page, pageSize, tags?, productionInfo?, search?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
 | `ITagService` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)`, `ExistsAllAsync(tags)` — validates all tags exist in master list |
 | `ISettingsService` | `GetAsync()`, `UpdateAsync(settings)` |
 | `IThumbnailService` | `GetIdentityAsync(videoId, timecode = null)` — version only, no generation, `GetThumbnailAsync(videoId, timecode = null)` — cached, null timecode means the stored one, `InvalidateCache(videoId)` — clears every timecode by key prefix, `ClearAllCache()` |

@@ -11,10 +11,6 @@ public class JsonSettingsRepository : ISettingsRepository
     private readonly string _filePath;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private SiteSettings? _cache;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
 
     public JsonSettingsRepository(IOptions<LibrarySettings> settings)
     {
@@ -56,9 +52,9 @@ public class JsonSettingsRepository : ISettingsRepository
         }
     }
 
-    public Task InvalidateCacheAsync()
+    public async Task InvalidateCacheAsync()
     {
-        _lock.Wait();
+        await _lock.WaitAsync();
         try
         {
             _cache = null;
@@ -67,7 +63,6 @@ public class JsonSettingsRepository : ISettingsRepository
         {
             _lock.Release();
         }
-        return Task.CompletedTask;
     }
 
     private async Task<SiteSettings> LoadAsync()
@@ -80,14 +75,14 @@ public class JsonSettingsRepository : ISettingsRepository
         }
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<SiteSettings>(json) ?? new SiteSettings();
+        return JsonSerializer.Deserialize<SiteSettings>(json, JsonStore.Options) ?? new SiteSettings();
     }
 
     private async Task SaveAsync(SiteSettings data)
     {
         if (string.IsNullOrEmpty(_filePath)) return;
 
-        var json = JsonSerializer.Serialize(data, JsonOptions);
+        var json = JsonSerializer.Serialize(data, JsonStore.Options);
         await File.WriteAllTextAsync(_filePath, json);
     }
 }

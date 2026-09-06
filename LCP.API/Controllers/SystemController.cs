@@ -55,7 +55,7 @@ public class SystemController : ControllerBase
     [HttpGet("export/info")]
     public async Task<IActionResult> ExportInfo()
     {
-        var videos = await _videoRepository.GetAllRawAsync();
+        var videos = await _videoRepository.GetSnapshotAsync();
         long videoBytes = 0;
         var videoCount = 0;
         foreach (var v in videos)
@@ -98,7 +98,7 @@ public class SystemController : ControllerBase
         if (syncIo is not null)
             syncIo.AllowSynchronousIO = true;
 
-        var videos = await _videoRepository.GetAllRawAsync();
+        var videos = await _videoRepository.GetSnapshotAsync();
 
         using var archive = new ZipArchive(response.Body, ZipArchiveMode.Create, leaveOpen: true);
 
