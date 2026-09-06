@@ -14,7 +14,6 @@ namespace LCP.API.Controllers;
 public class SystemController : ControllerBase
 {
     private readonly IHostApplicationLifetime _lifetime;
-    private readonly IVideoService _videoService;
     private readonly IVideoRepository _videoRepository;
     private readonly ITagRepository _tagRepository;
     private readonly ISettingsRepository _settingsRepository;
@@ -26,7 +25,6 @@ public class SystemController : ControllerBase
 
     public SystemController(
         IHostApplicationLifetime lifetime,
-        IVideoService videoService,
         IVideoRepository videoRepository,
         ITagRepository tagRepository,
         ISettingsRepository settingsRepository,
@@ -37,7 +35,6 @@ public class SystemController : ControllerBase
         ILogger<SystemController> logger)
     {
         _lifetime = lifetime;
-        _videoService = videoService;
         _videoRepository = videoRepository;
         _tagRepository = tagRepository;
         _settingsRepository = settingsRepository;
@@ -58,7 +55,7 @@ public class SystemController : ControllerBase
     [HttpGet("export/info")]
     public async Task<IActionResult> ExportInfo()
     {
-        var videos = await _videoService.GetAllAsync();
+        var videos = await _videoRepository.GetAllRawAsync();
         long videoBytes = 0;
         var videoCount = 0;
         foreach (var v in videos)
@@ -101,7 +98,7 @@ public class SystemController : ControllerBase
         if (syncIo is not null)
             syncIo.AllowSynchronousIO = true;
 
-        var videos = await _videoService.GetAllAsync();
+        var videos = await _videoRepository.GetAllRawAsync();
 
         using var archive = new ZipArchive(response.Body, ZipArchiveMode.Create, leaveOpen: true);
 
