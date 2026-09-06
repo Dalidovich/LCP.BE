@@ -207,7 +207,7 @@ class SiteSettings {
 | Phase | Order | Description |
 |---|---|---|
 | Seed | 1st | Creates `SYSTEMFILES` folder if missing; if JSON file is empty, scans `LibraryRootPath` for video files and populates it; seeds tags file from existing video tags; creates default settings.json if missing; sets default ThumbnailTimecode (2s) for each video; runs Smart Video Grouping when enabled |
-| Sync (`LibrarySyncService`) | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices` and recomputes stored ones that are out of bounds or overlapping; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
+| Sync (`LibrarySyncService`) | 2nd | Backs up `library.json` to `SYSTEMFILES\backups\library-{yyyyMMdd-HHmmss}.json` (last 10 kept; skipped when the file is empty or malformed); bidirectional sync: first reattaches entries whose file merely moved (see Relocation Detection below), then removes entries whose file is missing from disk unless the share of missing entries exceeds `MaxSyncDeletionRatio`; adds new JSON entries for files found on disk; fills missing `PreviewSlices` and recomputes stored ones that are out of bounds or overlapping; strips orphaned tags (not in master tag list); runs Smart Video Grouping when enabled |
 
 Both phases run once per startup, sequentially, so they never race on `library.json`. The `stoppingToken` is honoured in the seed scan loop, so shutdown during indexing exits promptly. Any failure is caught and logged; it never aborts host startup. Progress and completion are logged via `ILogger<LibraryStartupService>`. `IVideoRepository` is Singleton so the in-memory cache is shared across all consumers.
 
@@ -230,6 +230,19 @@ When `WarmCache` is enabled in site settings, a pass pre-generates thumbnails an
 - logs per-video failures and pass-level failures instead of swallowing them
 
 Generation itself is deduplicated per cache key by `InFlightCoalescer<T>` in `ThumbnailService`/`PreviewService`, and all ffmpeg work is throttled process-wide by a static `SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2))` in `VideoProcessingService`.
+
+## Relocation Detection
+
+Sync resolves moved files before pruning, so moving a video to another folder keeps its `Id` and all metadata (tags, names, `CollectionId`, `ThumbnailTimecode`, `LastTimeWatched`, `PreviewSlices`) instead of dropping the entry and re-adding the file as a new one. Thumbnail/preview caches are keyed by `Id`, so they stay valid too.
+
+`LibrarySyncService.MatchRelocations` pairs entries with no file on disk against files on disk with no entry:
+
+1. Candidates must share the exact file name (with extension, `OrdinalIgnoreCase`). A renamed file is never matched.
+2. Within a file-name group, pairs are first resolved by duration: an entry matches when exactly one untracked path is within `RelocationDurationToleranceSeconds` (1s) of its stored `Duration` **and** that path is within tolerance of exactly one entry. Durations of `0` (unknown / failed probe) never match here.
+3. Leftovers pair only when exactly one entry and one path remain in the group, and their durations do not conflict (both known and more than 1s apart). This covers entries seeded before durations were probed.
+4. Ambiguous groups (several same-named files moved at once with indistinguishable durations) are left alone and fall through to the normal prune/add path.
+
+Relocated paths are excluded from the `MaxSyncDeletionRatio` guard, so reorganizing the whole library into new folders rewrites paths instead of tripping the guard.
 
 ## Smart Video Grouping
 
