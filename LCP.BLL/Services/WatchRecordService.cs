@@ -20,6 +20,11 @@ public class WatchRecordService : IWatchRecordService
         var normalized = WatchSegmentNormalizer.Normalize(segments);
         if (normalized.Count == 0) return;
 
-        await _repository.AppendAsync(new WatchRecord { VideoId = videoId, Segments = normalized });
+        await _repository.AppendAsync(new WatchRecord
+        {
+            VideoId = videoId,
+            WatchedAt = DateTime.UtcNow,
+            Segments = normalized
+        });
     }
 }

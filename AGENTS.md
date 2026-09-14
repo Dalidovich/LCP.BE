@@ -56,8 +56,9 @@ Static methods:
 ### `WatchRecord` / `WatchSegment` (LCP.Domain/Entities/)
 ```csharp
 class WatchRecord {
-    VideoId  : string
-    Segments : List<WatchSegment> (in watch order, overlaps kept)
+    VideoId   : string
+    WatchedAt : DateTime (UTC, server time when the record is appended)
+    Segments  : List<WatchSegment> (in watch order, overlaps kept)
 }
 class WatchSegment {
     Start    : int (whole seconds on the video timeline)
@@ -141,6 +142,7 @@ class SiteSettings {
 [
   {
     "videoId": "a1b2c3d4-...",
+    "watchedAt": "2026-09-14T18:42:07.1234567Z",
     "segments": [
       { "start": 21, "duration": 10 },
       { "start": 50, "duration": 17 }
@@ -236,6 +238,7 @@ Records which stretches of each video were watched, into `SYSTEMFILES\mostWatche
 - The frontend player tracks segments and posts one record per viewing when it ends: leaving the player, switching to another video, or `pagehide` (tab close/reload). A seek closes the current segment; a pause does not
 - `MostWatchedController` checks the setting, rejects negative values, verifies the video exists, then calls `IWatchRecordService.RecordAsync`
 - `WatchSegmentNormalizer.Normalize` (pure, tested) drops segments shorter than `MinDurationSeconds` (5) using the raw duration, then rounds `Start` and `Duration` to whole seconds with `MidpointRounding.AwayFromZero`. Order and overlaps are kept
+- `WatchRecordService` stamps `WatchedAt` with `DateTime.UtcNow` when appending, i.e. the moment the viewing ended and was posted. Records written before the field existed deserialize with `0001-01-01T00:00:00`
 - When no segment survives, nothing is appended
 - `JsonWatchRecordRepository` has no cache: every append reads and rewrites the file under its `SemaphoreSlim`. There is no read endpoint
 - Records are never pruned: entries for videos that sync later removes stay in the log
