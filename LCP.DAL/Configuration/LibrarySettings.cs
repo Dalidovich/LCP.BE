@@ -8,6 +8,7 @@ public class LibrarySettings
     public const string TagsFileName = "tags.json";
     public const string ProductionInfoFileName = "productionInfo.json";
     public const string SettingsFileName = "settings.json";
+    public const string MostWatchedFileName = "mostWatched.json";
 
     public string LibraryRootPath { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;

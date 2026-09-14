@@ -68,7 +68,7 @@ public class SystemController : ControllerBase
         }
 
         long systemBytes = 0;
-        var systemFiles = new[] { LibrarySettings.JsonFileName, LibrarySettings.TagsFileName, LibrarySettings.ProductionInfoFileName, LibrarySettings.SettingsFileName };
+        var systemFiles = new[] { LibrarySettings.JsonFileName, LibrarySettings.TagsFileName, LibrarySettings.ProductionInfoFileName, LibrarySettings.SettingsFileName, LibrarySettings.MostWatchedFileName };
         foreach (var name in systemFiles)
         {
             var path = Path.Combine(_libraryRootPath, "SYSTEMFILES", name);
@@ -108,6 +108,7 @@ public class SystemController : ControllerBase
             LibrarySettings.TagsFileName,
             LibrarySettings.ProductionInfoFileName,
             LibrarySettings.SettingsFileName,
+            LibrarySettings.MostWatchedFileName,
         };
 
         foreach (var sysFile in systemFiles)
@@ -195,6 +196,7 @@ public class SystemController : ControllerBase
                 LibrarySettings.TagsFileName,
                 LibrarySettings.SettingsFileName,
                 LibrarySettings.ProductionInfoFileName,
+                LibrarySettings.MostWatchedFileName,
             };
 
             foreach (var sysFile in systemFiles)

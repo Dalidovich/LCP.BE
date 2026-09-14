@@ -69,6 +69,7 @@ Dependency flow: `API → BLL → DAL → Domain` (no reverse dependencies).
 | `GET` | `/api/settings` | Get site settings |
 | `PUT` | `/api/settings` | Update site settings |
 | `POST` | `/api/settings/check-password` | Validate password |
+| `POST` | `/api/most-watched` | Append a watch record (only while Most watched is on) |
 | `POST` | `/api/sync` | Trigger library sync |
 | `GET` | `/api/system/export` | Download ZIP backup (videos + system files) |
 | `POST` | `/api/system/import` | Upload ZIP backup — clears library, extracts videos + system files |
@@ -84,6 +85,7 @@ All metadata lives in JSON files under `{LibraryRootPath}/SYSTEMFILES/`:
 | `tags.json` | Master tag list |
 | `productionInfo.json` | Studio list |
 | `settings.json` | Site settings |
+| `mostWatched.json` | Watch log: watched segments of each viewing |
 
 No database or ORM — repositories use in-memory caching with `SemaphoreSlim` for thread safety.
 
@@ -98,6 +100,7 @@ No database or ORM — repositories use in-memory caching with `SemaphoreSlim` f
 - **Streaming** — `PhysicalFile` with range processing for browser seek support
 - **Global error handling** — unhandled exceptions return structured JSON error responses
 - **Export/Import** — full library backup via ZIP archive (videos + metadata), restorable via import endpoint
+- **Most watched log** — optional; appends the watched stretches of every viewing (5 s and longer, whole seconds) to `mostWatched.json`
 
 ## Build & Run
 

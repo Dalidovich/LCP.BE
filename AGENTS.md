@@ -17,8 +17,8 @@
 **Dependency flow:** `API → BLL → DAL → Domain` (no reverse dependencies)
 
 **Notes:**
-- `LCP.BLL/Helpers/` contains `PasswordGate.cs`, `PasswordHasher.cs`, `RelocationMatcher.cs`, `SearchHelper.cs`
-- `LCP.Tests` (xUnit, `net9.0`) covers the pure logic: `SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService`. Run with `dotnet test`
+- `LCP.BLL/Helpers/` contains `PasswordGate.cs`, `PasswordHasher.cs`, `RelocationMatcher.cs`, `SearchHelper.cs`, `WatchSegmentNormalizer.cs`
+- `LCP.Tests` (xUnit, `net9.0`) covers the pure logic: `SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService`, `WatchSegmentNormalizer`. Run with `dotnet test`
 
 ## Data Model
 
@@ -53,6 +53,18 @@ Static methods:
 - `CalculateRandomSlices(double duration)` — same count and same margin clamping, but randomizes each slice start within its zone; used by `POST /regenerate-slices`
 - `AreWithinBounds(IReadOnlyList<PreviewSlice>, double duration)` — validates stored slices (in bounds, non-overlapping); used by sync to recompute bad legacy data
 
+### `WatchRecord` / `WatchSegment` (LCP.Domain/Entities/)
+```csharp
+class WatchRecord {
+    VideoId  : string
+    Segments : List<WatchSegment> (in watch order, overlaps kept)
+}
+class WatchSegment {
+    Start    : int (whole seconds on the video timeline)
+    Duration : int (whole seconds)
+}
+```
+
 ### `VideoType` (LCP.Domain/Entities/)
 ```csharp
 enum VideoType { Anime = 0, Film = 1 }
@@ -71,6 +83,7 @@ class SiteSettings {
     RandomSort     : bool   (randomize video order for list endpoints; stable seed per server start + setting toggle)
     Debug          : bool
     StatisticsMode : bool   (order videos by LastTimeWatched ascending)
+    MostWatched    : bool   (collect watched segments into mostWatched.json; see Most Watched Log)
     VideoTypeFilter : List<VideoType> (empty = show all; filters GET /api/videos and GET /api/videos/paged)
 }
 ```
@@ -118,8 +131,22 @@ class SiteSettings {
   "randomSort": false,
   "debug": false,
   "statisticsMode": false,
+  "mostWatched": false,
   "videoTypeFilter": []
 }
+```
+
+**`mostWatched.json`** — watch log array, one record per viewing, appended in order. Created on the first append:
+```json
+[
+  {
+    "videoId": "a1b2c3d4-...",
+    "segments": [
+      { "start": 21, "duration": 10 },
+      { "start": 50, "duration": 17 }
+    ]
+  }
+]
 ```
 
 **JSON casing** — every store is read and written through `JsonStore.Options` (`LCP.DAL/Repositories/JsonStore.cs`): `WriteIndented`, `PropertyNamingPolicy = CamelCase` and `PropertyNameCaseInsensitive`. Files are written in camelCase, exactly as documented above, and PascalCase files written by older builds still load. Never deserialize a store without those options — a casing mismatch silently yields default values instead of failing.
@@ -141,7 +168,7 @@ class SiteSettings {
 }
 ```
 
-- System file names (`library.json`, `tags.json`, `settings.json`) are hardcoded constants in `LibrarySettings.cs` — resolved under `{LibraryRootPath}\SYSTEMFILES\` via `ResolveSystemFilePath()`
+- System file names (`library.json`, `tags.json`, `settings.json`, `mostWatched.json`) are hardcoded constants in `LibrarySettings.cs` — resolved under `{LibraryRootPath}\SYSTEMFILES\` via `ResolveSystemFilePath()`
 - `LibraryRootPath` — root directory for video files. Full paths resolved as `LibraryRootPath + video.RelativePath`.
 - `PasswordHash` / `PasswordSalt` — optional; base64 PBKDF2-SHA256 hash (100000 iterations, 32-byte output) and its base64 16-byte salt, checked by `POST /api/settings/check-password`. When either is empty the password gate is disabled: the fallback policy is satisfied without a session, `check-password` and `session` return `true`, and the frontend skips the prompt. Set both to require a login. Generate them with `POST /api/settings/hash-password` (Development only) and paste the result into `appsettings.json`
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
@@ -158,6 +185,8 @@ class SiteSettings {
 | `PagedResult<T>` | `Items`, `Page`, `PageSize`, `TotalCount`, `TotalPages` (computed) | Generic paginated response |
 | `CollectionDto` | `Id` (string), `Count` (int) | Collection listing |
 | `SettingsDto` | mirrors `SiteSettings` | Site settings response |
+| `WatchRecordRequest` | `record(string VideoId, List<WatchSegmentRequest> Segments)` | `POST /api/most-watched` body |
+| `WatchSegmentRequest` | `record(double Start, double Duration)` | Raw segment in seconds, before normalization |
 | `PreviewResolution` | enum `Preview144`, `Preview360` | Preview quality selector |
 | `PreviewResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Preview clip with etag support |
 | `ThumbnailResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Thumbnail frame with etag support |
@@ -188,6 +217,7 @@ class SiteSettings {
 | POST | `/api/settings/hash-password` | Development only: returns `PasswordHash`/`PasswordSalt` for a submitted password; `404` in other environments. Requires authentication |
 | POST | `/api/settings/logout` | Clear the session cookie |
 | GET | `/api/settings/session` | Whether the caller is authenticated, or `true` when the gate is disabled. `[AllowAnonymous]` |
+| POST | `/api/most-watched` | Append a watch record (body: `WatchRecordRequest`). `409` when `MostWatched` is off, `400` on a negative start/duration, `404` for an unknown video, otherwise `204` (see Most Watched Log) |
 | GET | `/api/videos/random` | Return a random video |
 | POST | `/api/videos/new` | Upload a new video file (`IFormFile`). Rejects extensions outside `VideoFileExtensions.Supported` and files larger than `LibrarySettings.MaxUploadBytes`, both with `400 {"error": "..."}`. The write is atomic (see Upload Atomicity below); I/O failures also return `400` |
 | GET | `/api/production-info` | List all studios |
@@ -198,6 +228,18 @@ class SiteSettings {
 | GET | `/api/system/export/info` | Backup metadata (JSON with byte/video counts) |
 | GET | `/api/system/export` | Download full backup as ZIP archive |
 | POST | `/api/system/shutdown` | Graceful server shutdown (via `IHostApplicationLifetime`) |
+
+## Most Watched Log
+
+Records which stretches of each video were watched, into `SYSTEMFILES\mostWatched.json`. Only active while `SiteSettings.MostWatched` is on.
+
+- The frontend player tracks segments and posts one record per viewing when it ends: leaving the player, switching to another video, or `pagehide` (tab close/reload). A seek closes the current segment; a pause does not
+- `MostWatchedController` checks the setting, rejects negative values, verifies the video exists, then calls `IWatchRecordService.RecordAsync`
+- `WatchSegmentNormalizer.Normalize` (pure, tested) drops segments shorter than `MinDurationSeconds` (5) using the raw duration, then rounds `Start` and `Duration` to whole seconds with `MidpointRounding.AwayFromZero`. Order and overlaps are kept
+- When no segment survives, nothing is appended
+- `JsonWatchRecordRepository` has no cache: every append reads and rewrites the file under its `SemaphoreSlim`. There is no read endpoint
+- Records are never pruned: entries for videos that sync later removes stay in the log
+- Export and `export/info` include the file; import restores it, and creates `[]` when the archive has none
 
 ## Upload Atomicity
 
@@ -290,7 +332,7 @@ All videos are included in grouping logic.
 - **Thumbnails** — generated on demand via `FFMpegConverter.GetVideoThumbnail()`; cached in memory (`MediaCache<ThumbnailResult>` keyed by `{id}_{timecode}_{version}` — byte-bounded LRU, limit `LibrarySettings.ThumbnailCacheBytes`, default 64 MB). `GetThumbnailAsync(id, timecode = null)` is the only entry point: a null timecode resolves to the stored `ThumbnailTimecode`, so `?t=` at the stored value shares the entry that warmup and the plain URL populate. Scrubbing at other timecodes is cached and coalesced too. Cache invalidated on PATCH (ThumbnailTimecode) or `?noCache=true`, both by key prefix.
 - **Previews** — generated on demand via `FFMpegConverter.ConvertMedia` (segments) + `ConcatMedia` compilation (25s clip, 144p/360p, no audio, ultrafast preset); cached in memory as `MediaCache<PreviewResult>` keyed by `{id}_{resolution}_{version}`, where the version covers the resolution and the slice list — byte-bounded LRU, limit `LibrarySettings.PreviewCacheBytes`, default 512 MB. Regenerated slices therefore produce a new key and a new ETag. `InvalidateCache(id)` removes every resolution by key prefix. Single-slice previews use direct conversion without temp files.
 - **Conditional requests** — `VideosController` resolves `GetIdentityAsync` first and answers `304` **before** calling the generating method. Never generate and then compare: on a cold cache a revalidation would otherwise cost a full ffmpeg run for a body that is never sent. After generating, `ApplyValidators` re-stamps the headers from the result so the served bytes and the ETag cannot disagree.
-- **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository` use `SemaphoreSlim(1,1)` per instance. `InvalidateCacheAsync` awaits that semaphore like every other member; never block on it with `Wait()` from an async method
+- **Thread safety** — `JsonVideoRepository`, `JsonTagRepository`, `JsonSettingsRepository`, `JsonWatchRecordRepository` use `SemaphoreSlim(1,1)` per instance. `InvalidateCacheAsync` awaits that semaphore like every other member; never block on it with `Wait()` from an async method
 - **Video cache is copy-on-write** — `JsonVideoRepository` holds one immutable `IReadOnlyList<VideoMetadata>` snapshot. `GetSnapshotAsync()`, `GetByIdAsync()` and `GetByCollectionIdAsync()` hand out that shared instance without cloning, so a list request costs no deep copy of the library. In exchange **callers must treat everything a read returns as read-only**. Writes go through `MutateAsync`/`SaveAllAsync`, which deep-copy once, mutate the copy and publish it as the new snapshot only after the file write succeeds — so entries in a snapshot already handed out are never mutated underneath a reader, and a failed write leaves no unsaved state visible
 - **Read-modify-write on videos** — never `GetSnapshotAsync()` + mutate + `SaveAllAsync()`: the lock is released between the two calls, so concurrent writers overwrite each other. Use `IVideoRepository.MutateAsync(entries => (changed, result))`, which holds the lock across the whole sequence and persists only when the delegate reports `changed`. The delegate is synchronous by design — do any async work (`ProbeDuration`, settings/tag reads) *before* the call, and never call another `IVideoRepository` method inside it (`SemaphoreSlim` is not reentrant → instant deadlock). The delegate gets the live cache list, so return a `Clone()` of anything the caller keeps. Cross-service cache invalidation (`InvalidateInfoCache()`, `InvalidateCache(id)`) stays outside the delegate. When the persist throws, `MutateAsync` and `SaveAllAsync` drop the in-memory cache before rethrowing, so the next read reloads the last state that actually reached disk
 - **Video streaming** — uses ASP.NET Core `PhysicalFile` with `enableRangeProcessing: true` for seek support; maps file extensions to MIME types
@@ -299,7 +341,7 @@ All videos are included in grouping logic.
 - **Logging** — Serilog to console only (no file output)
 - **Nullable enabled** — follow `?` annotations for nullable reference types
 - **One settings read per request** — `VideoService` reads `ISettingsRepository.GetAsync()` once per public method and threads the result through `ApplyOrdering` / `FilterByType`; those helpers are static and take `SiteSettings?` rather than fetching it themselves
-- **Tests** — `LCP.Tests` covers the pure logic (`SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService` via `InMemoryVideoRepository`). New pure functions belong there; keep them free of file and ffmpeg I/O so they stay testable
+- **Tests** — `LCP.Tests` covers the pure logic (`SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `WatchSegmentNormalizer`, `SmartGroupingService` via `InMemoryVideoRepository`). New pure functions belong there; keep them free of file and ffmpeg I/O so they stay testable
 - **No comments in code** — keep source files clean
 - **RandomSort** — when enabled, videos in `GET /api/videos`, `GET /api/videos/paged`, and `GET /api/collections/{id}/videos` are shuffled deterministically using a seed that persists per server start and regenerates when RandomSort is toggled off→on. This guarantees no duplicates or gaps across pagination requests since the order is stable for the same seed.
 - **Filters never reorder** — tag and studio filters in `GET /api/videos/paged` are pure `Where` predicates (a video must match at least one selected tag AND at least one selected studio when both are supplied). Ordering precedence is: search relevance when a search term is present, otherwise a single descending sort by combined match score (tag matches + studio matches) with the base ordering (`RandomSort` / `StatisticsMode`) preserved within equal scores by the stable sort. Never re-sort after `ApplyOrderingAsync`.
@@ -349,6 +391,7 @@ LCP.Tests → LCP.BLL, LCP.DAL, LCP.Domain
 | `IVideoRepository` | `GetSnapshotAsync()` → shared read-only snapshot, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `SaveAllAsync(videos)`, `MutateAsync&lt;T&gt;(Func&lt;List&lt;VideoMetadata&gt;, (bool Changed, T Result)&gt;)` — atomic read-modify-write, `InvalidateCacheAsync()` |
 | `ITagRepository` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)` |
 | `ISettingsRepository` | `GetAsync()`, `UpdateAsync(settings)` |
+| `IWatchRecordRepository` | `AppendAsync(record)` |
 
 ### BLL Interfaces (`LCP.BLL/Interfaces/`)
 
@@ -357,6 +400,7 @@ LCP.Tests → LCP.BLL, LCP.DAL, LCP.Domain
 | `IVideoService` | `GetAllAsync(search?)`, `GetPagedAsync(page, pageSize, tags?, productionInfo?, search?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
 | `ITagService` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)`, `ExistsAllAsync(tags)` — validates all tags exist in master list |
 | `ISettingsService` | `GetAsync()`, `UpdateAsync(settings)` |
+| `IWatchRecordService` | `RecordAsync(videoId, segments)` — normalizes and appends; no-op when nothing survives |
 | `IThumbnailService` | `GetIdentityAsync(videoId, timecode = null)` — version only, no generation, `GetThumbnailAsync(videoId, timecode = null)` — cached, null timecode means the stored one, `InvalidateCache(videoId)` — clears every timecode by key prefix, `ClearAllCache()` |
 | `IPreviewService` | `GetIdentityAsync(videoId, resolution)` — version only, no generation, `GetPreviewAsync(videoId, resolution)` — cached, `InvalidateCache(videoId)` — clears all resolutions, `ClearAllCache()` |
 | `ISmartGroupingService` | `GroupVideosAsync()` |

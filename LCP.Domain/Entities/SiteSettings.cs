@@ -8,6 +8,7 @@ public class SiteSettings
     public bool RandomSort { get; set; }
     public bool Debug { get; set; }
     public bool StatisticsMode { get; set; }
+    public bool MostWatched { get; set; }
     public List<VideoType> VideoTypeFilter { get; set; } = [];
 
     public SiteSettings Clone() => new()
@@ -18,6 +19,7 @@ public class SiteSettings
         RandomSort = RandomSort,
         Debug = Debug,
         StatisticsMode = StatisticsMode,
+        MostWatched = MostWatched,
         VideoTypeFilter = [.. VideoTypeFilter]
     };
 }

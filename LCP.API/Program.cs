@@ -73,10 +73,12 @@ public class Program
             builder.Services.AddSingleton<ITagRepository, JsonTagRepository>();
             builder.Services.AddSingleton<IProductionInfoRepository, JsonProductionInfoRepository>();
             builder.Services.AddSingleton<ISettingsRepository, JsonSettingsRepository>();
+            builder.Services.AddSingleton<IWatchRecordRepository, JsonWatchRecordRepository>();
             builder.Services.AddScoped<IVideoService, VideoService>();
             builder.Services.AddScoped<ITagService, TagService>();
             builder.Services.AddScoped<IProductionInfoService, ProductionInfoService>();
             builder.Services.AddScoped<ISettingsService, SettingsService>();
+            builder.Services.AddScoped<IWatchRecordService, WatchRecordService>();
             builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
             builder.Services.AddSingleton<IPreviewService, PreviewService>();
             builder.Services.AddSingleton<ISmartGroupingService, SmartGroupingService>();

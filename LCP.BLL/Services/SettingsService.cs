@@ -30,6 +30,7 @@ public class SettingsService : ISettingsService
             RandomSort = settings.RandomSort,
             Debug = settings.Debug,
             StatisticsMode = settings.StatisticsMode,
+            MostWatched = settings.MostWatched,
             VideoTypeFilter = settings.VideoTypeFilter
         };
 
@@ -45,6 +46,7 @@ public class SettingsService : ISettingsService
         RandomSort = s.RandomSort,
         Debug = s.Debug,
         StatisticsMode = s.StatisticsMode,
+        MostWatched = s.MostWatched,
         VideoTypeFilter = s.VideoTypeFilter
     };
 }

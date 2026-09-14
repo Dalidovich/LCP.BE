@@ -10,5 +10,6 @@ public class SettingsDto
     public bool RandomSort { get; set; }
     public bool Debug { get; set; }
     public bool StatisticsMode { get; set; }
+    public bool MostWatched { get; set; }
     public List<VideoType> VideoTypeFilter { get; set; } = [];
 }
