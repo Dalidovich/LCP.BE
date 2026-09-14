@@ -165,7 +165,8 @@ class SiteSettings {
     "MaxSyncDeletionRatio": 0.5,
     "ThumbnailCacheBytes": 67108864,
     "PreviewCacheBytes": 536870912,
-    "MaxUploadBytes": 68719476736
+    "MaxUploadBytes": 68719476736,
+    "MinWatchSegmentSeconds": 5
   }
 }
 ```
@@ -176,6 +177,7 @@ class SiteSettings {
 - `SmartVideoGrouping` — when `true`, automatically groups videos by common system name prefix on seed/sync (see Smart Video Grouping below)
 - `MaxSyncDeletionRatio` — optional (default `0.5`); fraction of entries sync may prune in one pass. Above it, pruning is skipped and logged at error level. Ignored for libraries with fewer than 10 entries and for values outside `(0, 1)`
 - `MaxUploadBytes` — optional (default `68719476736`, 64 GB); largest file `POST /api/videos/new` accepts. The action attributes cap the request at a hard 200 GB ceiling; this value is enforced inside the action against `IFormFile.Length`
+- `MinWatchSegmentSeconds` — optional (default `5`); watch segments shorter than this are not written to `mostWatched.json` (see Most Watched Log)
 - `ThumbnailCacheBytes` / `PreviewCacheBytes` — optional (defaults `67108864` / `536870912`); byte budgets for the in-memory thumbnail and preview LRU caches. Non-positive values are clamped to 1 byte, which still keeps a single entry resident
 
 ## DTOs (LCP.BLL/DTOs/)
@@ -237,7 +239,7 @@ Records which stretches of each video were watched, into `SYSTEMFILES\mostWatche
 
 - The frontend player tracks segments and posts one record per viewing when it ends: leaving the player, switching to another video, or `pagehide` (tab close/reload). A seek closes the current segment; a pause does not
 - `MostWatchedController` checks the setting, rejects negative values, verifies the video exists, then calls `IWatchRecordService.RecordAsync`
-- `WatchSegmentNormalizer.Normalize` (pure, tested) drops segments shorter than `MinDurationSeconds` (5) using the raw duration, then rounds `Start` and `Duration` to whole seconds with `MidpointRounding.AwayFromZero`. Order and overlaps are kept
+- `WatchSegmentNormalizer.Normalize` (pure, tested) drops segments shorter than the `minDurationSeconds` argument (`WatchRecordService` passes `LibrarySettings.MinWatchSegmentSeconds`) using the raw duration, then rounds `Start` and `Duration` to whole seconds with `MidpointRounding.AwayFromZero`. Order and overlaps are kept
 - `WatchRecordService` stamps `WatchedAt` with `DateTime.UtcNow` when appending, i.e. the moment the viewing ended and was posted. Records written before the field existed deserialize with `0001-01-01T00:00:00`
 - When no segment survives, nothing is appended
 - `JsonWatchRecordRepository` has no cache: every append reads and rewrites the file under its `SemaphoreSlim`. There is no read endpoint

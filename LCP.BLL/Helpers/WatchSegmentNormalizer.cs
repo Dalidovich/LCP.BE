@@ -5,11 +5,9 @@ namespace LCP.BLL.Helpers;
 
 public static class WatchSegmentNormalizer
 {
-    public const double MinDurationSeconds = 5;
-
-    public static List<WatchSegment> Normalize(IEnumerable<WatchSegmentRequest> segments) =>
+    public static List<WatchSegment> Normalize(IEnumerable<WatchSegmentRequest> segments, double minDurationSeconds) =>
         [.. segments
-            .Where(s => s.Duration >= MinDurationSeconds)
+            .Where(s => s.Duration >= minDurationSeconds)
             .Select(s => new WatchSegment
             {
                 Start = ToWholeSeconds(s.Start),

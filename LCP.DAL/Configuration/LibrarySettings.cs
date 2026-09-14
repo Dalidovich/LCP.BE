@@ -20,6 +20,7 @@ public class LibrarySettings
     public int FfmpegProbeTimeoutSeconds { get; set; } = 30;
     public int FfmpegConvertTimeoutSeconds { get; set; } = 300;
     public long MaxUploadBytes { get; set; } = 64L * 1024 * 1024 * 1024;
+    public double MinWatchSegmentSeconds { get; set; } = 5;
 
     public string ResolveSystemFilePath(string relativePath)
     {
