@@ -21,6 +21,7 @@ public class LibrarySettings
     public int FfmpegConvertTimeoutSeconds { get; set; } = 300;
     public long MaxUploadBytes { get; set; } = 64L * 1024 * 1024 * 1024;
     public double MinWatchSegmentSeconds { get; set; } = 5;
+    public CompilationSettings Compilation { get; set; } = new();
 
     public string ResolveSystemFilePath(string relativePath)
     {

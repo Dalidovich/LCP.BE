@@ -12,6 +12,7 @@ param(
     [int]$FfmpegConvertTimeoutSeconds = 300,
     [long]$MaxUploadBytes = 68719476736,
     [double]$MinWatchSegmentSeconds = 5,
+    [double]$CompilationMaxDurationSeconds = 600,
     [string[]]$CorsAllowedOrigins = @(),
     [int]$Port = 5107,
     [string]$ListenAddress = '0.0.0.0',
@@ -150,6 +151,9 @@ $settings = [ordered]@{
         FfmpegConvertTimeoutSeconds = $FfmpegConvertTimeoutSeconds
         MaxUploadBytes              = $MaxUploadBytes
         MinWatchSegmentSeconds      = $MinWatchSegmentSeconds
+        Compilation                 = [ordered]@{
+            MaxDurationSeconds = $CompilationMaxDurationSeconds
+        }
     }
 }
 

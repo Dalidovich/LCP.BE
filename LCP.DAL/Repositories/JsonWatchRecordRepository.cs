@@ -33,6 +33,21 @@ public class JsonWatchRecordRepository : IWatchRecordRepository
         }
     }
 
+    public async Task<List<WatchRecord>> GetAllAsync()
+    {
+        if (string.IsNullOrEmpty(_filePath)) return [];
+
+        await _lock.WaitAsync();
+        try
+        {
+            return await LoadAsync();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     private async Task<List<WatchRecord>> LoadAsync()
     {
         if (!File.Exists(_filePath)) return [];

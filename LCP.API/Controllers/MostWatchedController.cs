@@ -32,10 +32,11 @@ public class MostWatchedController : ControllerBase
         if (request.Segments.Any(s => s.Start < 0 || s.Duration < 0))
             return BadRequest(new { error = "Segment start and duration must not be negative" });
 
-        if (await _videoService.GetByIdAsync(request.VideoId) is null)
+        var video = await _videoService.GetByIdAsync(request.VideoId);
+        if (video is null)
             return NotFound();
 
-        await _watchRecordService.RecordAsync(request.VideoId, request.Segments);
+        await _watchRecordService.RecordAsync(request.VideoId, video.NameEn, request.Segments);
         return NoContent();
     }
 }

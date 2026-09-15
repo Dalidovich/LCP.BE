@@ -91,37 +91,8 @@ public class VideoProcessingService : IVideoProcessingService
     {
         try
         {
-            var ffmpegPath = GetFfmpegExePath();
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = ffmpegPath,
-                Arguments = $"-i \"{videoPath}\"",
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                _logger.LogWarning("Failed to start ffmpeg process for {VideoPath}", videoPath);
-                return 0;
-            }
-
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            if (!process.WaitForExit((int)_probeTimeout.TotalMilliseconds))
-            {
-                _logger.LogWarning(
-                    "ffmpeg probe exceeded {TimeoutSeconds}s for {VideoPath}; killing the process and reporting an unknown duration",
-                    _probeTimeout.TotalSeconds, videoPath);
-                KillProcessTree(process, videoPath);
-                ObserveFailure(stderrTask);
-                return 0;
-            }
-
-            var stderr = stderrTask.GetAwaiter().GetResult();
+            var stderr = RunProbe(videoPath);
+            if (stderr is null) return 0;
 
             var match = Regex.Match(stderr, @"Duration: (\d+):(\d+):(\d+)\.(\d+)");
             if (match.Success)
@@ -140,6 +111,76 @@ public class VideoProcessingService : IVideoProcessingService
             _logger.LogError(ex, "Failed to probe duration for {VideoPath}", videoPath);
         }
         return 0;
+    }
+
+    private string? RunProbe(string videoPath)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetFfmpegExePath(),
+            Arguments = $"-i \"{videoPath}\"",
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            _logger.LogWarning("Failed to start ffmpeg process for {VideoPath}", videoPath);
+            return null;
+        }
+
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit((int)_probeTimeout.TotalMilliseconds))
+        {
+            _logger.LogWarning(
+                "ffmpeg probe exceeded {TimeoutSeconds}s for {VideoPath}; killing the process",
+                _probeTimeout.TotalSeconds, videoPath);
+            KillProcessTree(process, videoPath);
+            ObserveFailure(stderrTask);
+            return null;
+        }
+
+        return stderrTask.GetAwaiter().GetResult();
+    }
+
+    private bool RunFfmpeg(string arguments, string label)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetFfmpegExePath(),
+            Arguments = arguments,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            _logger.LogWarning("Failed to start ffmpeg process for {Label}", label);
+            return false;
+        }
+
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit((int)_convertTimeout.TotalMilliseconds))
+        {
+            _logger.LogWarning("ffmpeg exceeded {TimeoutSeconds}s for {Label}; aborting",
+                _convertTimeout.TotalSeconds, label);
+            KillProcessTree(process, label);
+            ObserveFailure(stderrTask);
+            return false;
+        }
+
+        var stderr = stderrTask.GetAwaiter().GetResult();
+        if (process.ExitCode == 0) return true;
+
+        _logger.LogWarning("ffmpeg exited with {ExitCode} for {Label}: {Output}",
+            process.ExitCode, label, stderr.Length > 2000 ? stderr[^2000..] : stderr);
+        return false;
     }
 
     private void KillProcessTree(Process process, string videoPath)
@@ -223,6 +264,79 @@ public class VideoProcessingService : IVideoProcessingService
             _logger.LogError(ex, "Failed to generate thumbnail for {VideoPath}", videoPath);
             return null;
         }
+    }
+
+    public byte[]? GenerateCompilation(IReadOnlyList<CompilationClip> clips, int width, int height)
+    {
+        if (clips.Count == 0) return null;
+
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var segmentFiles = clips.Select((_, i) => Path.Combine(tempDir, $"clip{i}.mp4")).ToArray();
+            var failed = 0;
+
+            Parallel.For(0, clips.Count, new ParallelOptions { MaxDegreeOfParallelism = 2 }, i =>
+            {
+                if (Volatile.Read(ref failed) != 0) return;
+                if (!RunThrottled(() => EncodeCompilationClip(clips[i], segmentFiles[i], width, height)))
+                    Interlocked.Exchange(ref failed, 1);
+            });
+
+            if (failed != 0) return null;
+
+            var listFile = Path.Combine(tempDir, "clips.txt");
+            File.WriteAllLines(listFile, segmentFiles.Select(f => $"file '{f.Replace('\\', '/').Replace("'", "'\\''")}'"));
+
+            var outputFile = Path.Combine(tempDir, "compilation.mp4");
+            var concatArgs = $"-hide_banner -y -f concat -safe 0 -i \"{listFile}\" -c copy -movflags +faststart \"{outputFile}\"";
+            if (!RunThrottled(() => RunFfmpeg(concatArgs, "compilation concat")))
+                return null;
+
+            var data = File.ReadAllBytes(outputFile);
+            _logger.LogInformation("Generated compilation ({Size} bytes) from {Count} clips", data.Length, clips.Count);
+
+            return data.Length > 0 ? data : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate the compilation");
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete the temporary compilation directory {TempDir}", tempDir);
+            }
+        }
+    }
+
+    private bool EncodeCompilationClip(CompilationClip clip, string outputFile, int width, int height)
+    {
+        var probe = RunProbe(clip.VideoPath);
+        if (probe is null) return false;
+
+        var hasAudio = Regex.IsMatch(probe, @"Stream #\d+:\d+.*?: Audio:");
+        var start = MediaVersion.Format(clip.Start);
+        var duration = MediaVersion.Format(clip.Duration);
+        var video = $"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p";
+
+        var arguments =
+            $"-hide_banner -y -ss {start} -t {duration} -i \"{clip.VideoPath}\" " +
+            $"-f lavfi -t {duration} -i anullsrc=channel_layout=stereo:sample_rate=48000 " +
+            $"-map 0:v:0 -map {(hasAudio ? "0" : "1")}:a:0 " +
+            $"-vf \"{video}\" -af aresample=48000,aformat=channel_layouts=stereo " +
+            "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -ar 48000 -ac 2 -shortest " +
+            $"\"{outputFile}\"";
+
+        return RunFfmpeg(arguments, $"{clip.VideoPath} @ {start}s");
     }
 
     public byte[]? GeneratePreview(string videoPath, PreviewResolution resolution, List<PreviewSlice> slices)

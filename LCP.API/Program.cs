@@ -81,6 +81,7 @@ public class Program
             builder.Services.AddScoped<IWatchRecordService, WatchRecordService>();
             builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
             builder.Services.AddSingleton<IPreviewService, PreviewService>();
+            builder.Services.AddSingleton<ICompilationService, CompilationService>();
             builder.Services.AddSingleton<ISmartGroupingService, SmartGroupingService>();
             builder.Services.AddSingleton<IVideoProcessingService, VideoProcessingService>();
             builder.Services.AddSingleton<IMediaWarmupService, MediaWarmupService>();

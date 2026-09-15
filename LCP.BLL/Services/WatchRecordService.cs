@@ -19,7 +19,7 @@ public class WatchRecordService : IWatchRecordService
         _minSegmentSeconds = settings.Value.MinWatchSegmentSeconds;
     }
 
-    public async Task RecordAsync(string videoId, IReadOnlyList<WatchSegmentRequest> segments)
+    public async Task RecordAsync(string videoId, string nameEn, IReadOnlyList<WatchSegmentRequest> segments)
     {
         var normalized = WatchSegmentNormalizer.Normalize(segments, _minSegmentSeconds);
         if (normalized.Count == 0) return;
@@ -27,6 +27,7 @@ public class WatchRecordService : IWatchRecordService
         await _repository.AppendAsync(new WatchRecord
         {
             VideoId = videoId,
+            NameEn = nameEn,
             WatchedAt = DateTime.UtcNow,
             Segments = normalized
         });

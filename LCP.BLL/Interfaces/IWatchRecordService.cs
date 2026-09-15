@@ -4,5 +4,5 @@ namespace LCP.BLL.Interfaces;
 
 public interface IWatchRecordService
 {
-    Task RecordAsync(string videoId, IReadOnlyList<WatchSegmentRequest> segments);
+    Task RecordAsync(string videoId, string nameEn, IReadOnlyList<WatchSegmentRequest> segments);
 }

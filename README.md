@@ -101,6 +101,7 @@ No database or ORM — repositories use in-memory caching with `SemaphoreSlim` f
 - **Global error handling** — unhandled exceptions return structured JSON error responses
 - **Export/Import** — full library backup via ZIP archive (videos + metadata), restorable via import endpoint
 - **Most watched log** — optional; appends the watched stretches of every viewing (`MinWatchSegmentSeconds` and longer, default 5 s; whole seconds) to `mostWatched.json`
+- **Compilation** — builds one MP4 of the most watched moments from `mostWatched.json` (length from `LibrarySettings:Compilation:MaxDurationSeconds`, default 10 min), kept in memory only
 
 ## Build & Run
 
@@ -138,6 +139,7 @@ Builds the frontend, bundles it into the API and publishes a self-contained sing
 | `FfmpegConvertTimeoutSeconds` | Kill an ffmpeg conversion after this many seconds | `300` |
 | `MaxUploadBytes` | Rejection threshold for a single uploaded file | `68719476736` (64 GB) |
 | `MinWatchSegmentSeconds` | Shortest watched stretch written to `mostWatched.json` | `5` |
+| `CompilationMaxDurationSeconds` | Maximum compilation length; written to `LibrarySettings:Compilation:MaxDurationSeconds`, the other compilation knobs keep their defaults | `600` |
 | `CorsAllowedOrigins` | Extra browser origins allowed to call the API; unnecessary for the bundled SPA, which is same-origin | `@()` |
 | `Port` | HTTP port to listen on | `5107` |
 | `ListenAddress` | Bind address (`0.0.0.0` = all interfaces, `127.0.0.1` = local only) | `0.0.0.0` |

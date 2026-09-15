@@ -17,8 +17,8 @@
 **Dependency flow:** `API → BLL → DAL → Domain` (no reverse dependencies)
 
 **Notes:**
-- `LCP.BLL/Helpers/` contains `PasswordGate.cs`, `PasswordHasher.cs`, `RelocationMatcher.cs`, `SearchHelper.cs`, `WatchSegmentNormalizer.cs`
-- `LCP.Tests` (xUnit, `net9.0`) covers the pure logic: `SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService`, `WatchSegmentNormalizer`. Run with `dotnet test`
+- `LCP.BLL/Helpers/` contains `CompilationPlanner.cs`, `PasswordGate.cs`, `PasswordHasher.cs`, `RelocationMatcher.cs`, `SearchHelper.cs`, `WatchSegmentNormalizer.cs`
+- `LCP.Tests` (xUnit, `net9.0`) covers the pure logic: `CompilationPlanner`, `SearchHelper`, `PreviewSlice`, `RelocationMatcher`, `SmartGroupingService`, `WatchSegmentNormalizer`. Run with `dotnet test`
 
 ## Data Model
 
@@ -57,6 +57,7 @@ Static methods:
 ```csharp
 class WatchRecord {
     VideoId   : string
+    NameEn    : string   (video NameEn at append time; informational, "" in older records)
     WatchedAt : DateTime (UTC, server time when the record is appended)
     Segments  : List<WatchSegment> (in watch order, overlaps kept)
 }
@@ -142,6 +143,7 @@ class SiteSettings {
 [
   {
     "videoId": "a1b2c3d4-...",
+    "nameEn": "Inception",
     "watchedAt": "2026-09-14T18:42:07.1234567Z",
     "segments": [
       { "start": 21, "duration": 10 },
@@ -166,7 +168,20 @@ class SiteSettings {
     "ThumbnailCacheBytes": 67108864,
     "PreviewCacheBytes": 536870912,
     "MaxUploadBytes": 68719476736,
-    "MinWatchSegmentSeconds": 5
+    "MinWatchSegmentSeconds": 5,
+    "Compilation": {
+      "MaxDurationSeconds": 600,
+      "MergeGapSeconds": 3,
+      "MinMomentSeconds": 5,
+      "MaxMomentSeconds": 30,
+      "MaxCandidatesPerCluster": 3,
+      "MinDistanceSeconds": 5,
+      "MaxCoveragePercent": 0.25,
+      "MaxCoverageSeconds": 120,
+      "VideoRepeatPenalty": 0.5,
+      "Width": 1280,
+      "Height": 720
+    }
   }
 }
 ```
@@ -178,6 +193,7 @@ class SiteSettings {
 - `MaxSyncDeletionRatio` — optional (default `0.5`); fraction of entries sync may prune in one pass. Above it, pruning is skipped and logged at error level. Ignored for libraries with fewer than 10 entries and for values outside `(0, 1)`
 - `MaxUploadBytes` — optional (default `68719476736`, 64 GB); largest file `POST /api/videos/new` accepts. The action attributes cap the request at a hard 200 GB ceiling; this value is enforced inside the action against `IFormFile.Length`
 - `MinWatchSegmentSeconds` — optional (default `5`); watch segments shorter than this are not written to `mostWatched.json` (see Most Watched Log)
+- `Compilation` — optional (`CompilationSettings`, `LCP.DAL/Configuration/`); every knob of the compilation algorithm, all defaults shown above (see Compilation)
 - `ThumbnailCacheBytes` / `PreviewCacheBytes` — optional (defaults `67108864` / `536870912`); byte budgets for the in-memory thumbnail and preview LRU caches. Non-positive values are clamped to 1 byte, which still keeps a single entry resident
 
 ## DTOs (LCP.BLL/DTOs/)
@@ -191,6 +207,9 @@ class SiteSettings {
 | `SettingsDto` | mirrors `SiteSettings` | Site settings response |
 | `WatchRecordRequest` | `record(string VideoId, List<WatchSegmentRequest> Segments)` | `POST /api/most-watched` body |
 | `WatchSegmentRequest` | `record(double Start, double Duration)` | Raw segment in seconds, before normalization |
+| `CompilationDto` | `Id`, `Duration`, `Moments` (`CompilationMomentDto`: `VideoId`, `NameEn`, `Offset`, `Start`, `Duration`) | `POST /api/compilation` response; moments in playback order, `Offset` = position inside the compilation |
+| `MomentCluster` / `CompilationCandidate` / `SelectedMoment` | records | Derived stages of `CompilationPlanner` |
+| `CompilationClip` | `record(string VideoPath, double Start, double Duration)` | ffmpeg input for one compilation piece |
 | `PreviewResolution` | enum `Preview144`, `Preview360` | Preview quality selector |
 | `PreviewResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Preview clip with etag support |
 | `ThumbnailResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Thumbnail frame with etag support |
@@ -222,6 +241,8 @@ class SiteSettings {
 | POST | `/api/settings/logout` | Clear the session cookie |
 | GET | `/api/settings/session` | Whether the caller is authenticated, or `true` when the gate is disabled. `[AllowAnonymous]` |
 | POST | `/api/most-watched` | Append a watch record (body: `WatchRecordRequest`). `409` when `MostWatched` is off, `400` on a negative start/duration, `404` for an unknown video, otherwise `204` (see Most Watched Log) |
+| POST | `/api/compilation?rebuild=false` | Build the compilation (or reuse the stored one when the selection is unchanged and `rebuild` is false). Synchronous, can take minutes. `404` when nothing qualifies, `500` when ffmpeg fails (see Compilation) |
+| GET | `/api/compilation/{id}/stream` | Compilation MP4 from memory (Range supported, `no-store`). `404` unless `id` is the currently stored compilation |
 | GET | `/api/videos/random` | Return a random video |
 | POST | `/api/videos/new` | Upload a new video file (`IFormFile`). Rejects extensions outside `VideoFileExtensions.Supported` and files larger than `LibrarySettings.MaxUploadBytes`, both with `400 {"error": "..."}`. The write is atomic (see Upload Atomicity below); I/O failures also return `400` |
 | GET | `/api/production-info` | List all studios |
@@ -242,9 +263,28 @@ Records which stretches of each video were watched, into `SYSTEMFILES\mostWatche
 - `WatchSegmentNormalizer.Normalize` (pure, tested) drops segments shorter than the `minDurationSeconds` argument (`WatchRecordService` passes `LibrarySettings.MinWatchSegmentSeconds`) using the raw duration, then rounds `Start` and `Duration` to whole seconds with `MidpointRounding.AwayFromZero`. Order and overlaps are kept
 - `WatchRecordService` stamps `WatchedAt` with `DateTime.UtcNow` when appending, i.e. the moment the viewing ended and was posted. Records written before the field existed deserialize with `0001-01-01T00:00:00`
 - When no segment survives, nothing is appended
-- `JsonWatchRecordRepository` has no cache: every append reads and rewrites the file under its `SemaphoreSlim`. There is no read endpoint
-- Records are never pruned: entries for videos that sync later removes stay in the log
+- `WatchRecordService` also stores the video's `NameEn` (passed by the controller) for readability; nothing reads it back
+- `JsonWatchRecordRepository` has no cache: every append reads and rewrites the file under its `SemaphoreSlim`; `GetAllAsync` reads the file under the same lock. There is no read endpoint
+- Records are never pruned or modified, by design: entries for videos that sync later removes stay in the log, and consumers (Compilation) skip them instead
 - Export and `export/info` include the file; import restores it, and creates `[]` when the archive has none
+
+## Compilation
+
+One MP4 spliced from the most watched moments. Spec: `docs/comp alg.md`. Works on accumulated data regardless of `SiteSettings.MostWatched`.
+
+**`CompilationPlanner`** (`LCP.BLL/Helpers/`, pure, tested) — `Plan(records, videoDurations, CompilationSettings)`; input records are never mutated. Stages:
+1. `BuildClusters` — records whose `VideoId` is not in `videoDurations` are skipped; segments clipped to the video duration (unknown duration = no clip). Per video, moments sorted and merged when `start <= clusterEnd + MergeGapSeconds`. `MomentCluster` holds `Start`, `End`, `MomentCount`, `WatchedSeconds`, `Heat` (views per second, overlaps counted), `Popularity` = `WatchedSeconds / Duration`
+2. `BuildCandidates` — up to `MaxCandidatesPerCluster` windows per cluster: best average heat over `min(MaxMomentSeconds, free run)` seconds (runs shorter than `MinMomentSeconds` skipped; ties → longer, then earlier), zero-heat edges trimmed down to `MinMomentSeconds`; each pick blocks itself ± `MinDistanceSeconds`. `Score = BaseScore(popularity)` = popularity (single extension point)
+3. `Select` — greedy. Each round re-evaluates every candidate: seconds within `MinDistanceSeconds` of an already selected moment of the same video are blocked; the best window inside the remaining free seconds is taken, capped by `MaxMomentSeconds`, remaining total (`MaxDurationSeconds`) and remaining coverage `min(duration * MaxCoveragePercent, MaxCoverageSeconds)` (`MaxCoverageSeconds` alone when duration unknown). Below `MinMomentSeconds` → candidate dropped. `score = BaseScore(windowPopularity) * freeRatio / (1 + VideoRepeatPenalty * selectedFromVideo)`. Tie-break: score, popularity, `VideoId` ordinal, start. Selected moments never overlap, so coverage = sum of durations
+- The plan is deterministic; playback order is shuffled afterwards in `CompilationService`
+
+**`CompilationService`** (singleton):
+- Eligible videos: library snapshot filtered by `SiteSettings.VideoTypeFilter` (only that filter) and existing files
+- Builds serialize on a `SemaphoreSlim`. Fingerprint = sorted `videoId:start:duration` of the plan; same fingerprint and `rebuild=false` → stored compilation returned without ffmpeg
+- Holds only the latest compilation (`byte[]` + `CompilationDto`); a new build replaces it, previous ids then `404`. Nothing is written to disk except ffmpeg temp files
+- `CompilationDto.Moments[].NameEn` = library `NameEn`, falling back to `SystemName`
+
+**`VideoProcessingService.GenerateCompilation`** — each clip encoded to a temp MP4 (2 in parallel, each under the global ffmpeg limiter, `FfmpegConvertTimeoutSeconds` each) with direct `ffmpeg` process calls: accurate `-ss`/`-t`, scale+pad to `Width`x`Height`, 30 fps, yuv420p, libx264 veryfast CRF 23, AAC 160k 48 kHz stereo; sources without an audio stream (detected from `ffmpeg -i` output) get `anullsrc` silence. Then concat demuxer `-c copy -movflags +faststart`. Temp dir always deleted
 
 ## Upload Atomicity
 
@@ -396,7 +436,7 @@ LCP.Tests → LCP.BLL, LCP.DAL, LCP.Domain
 | `IVideoRepository` | `GetSnapshotAsync()` → shared read-only snapshot, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id)`, `GetAllCollectionIdsAsync()` → List&lt;(string Id, int Count)&gt;, `SaveAllAsync(videos)`, `MutateAsync&lt;T&gt;(Func&lt;List&lt;VideoMetadata&gt;, (bool Changed, T Result)&gt;)` — atomic read-modify-write, `InvalidateCacheAsync()` |
 | `ITagRepository` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)` |
 | `ISettingsRepository` | `GetAsync()`, `UpdateAsync(settings)` |
-| `IWatchRecordRepository` | `AppendAsync(record)` |
+| `IWatchRecordRepository` | `AppendAsync(record)`, `GetAllAsync()` |
 
 ### BLL Interfaces (`LCP.BLL/Interfaces/`)
 
@@ -405,7 +445,9 @@ LCP.Tests → LCP.BLL, LCP.DAL, LCP.Domain
 | `IVideoService` | `GetAllAsync(search?)`, `GetPagedAsync(page, pageSize, tags?, productionInfo?, search?)`, `GetByIdAsync(id)`, `GetByCollectionIdAsync(id, page, pageSize)`, `GetAllCollectionIdsAsync(page, pageSize)`, `UpdateAsync(id, request)`, `ResolveFilePathAsync(id)`, `RegenerateSlicesAsync(id)`, `GetSimilarAsync(id, page, pageSize)` |
 | `ITagService` | `GetAllAsync()`, `AddAsync(tag)`, `RemoveAsync(tag)`, `ExistsAllAsync(tags)` — validates all tags exist in master list |
 | `ISettingsService` | `GetAsync()`, `UpdateAsync(settings)` |
-| `IWatchRecordService` | `RecordAsync(videoId, segments)` — normalizes and appends; no-op when nothing survives |
+| `IWatchRecordService` | `RecordAsync(videoId, nameEn, segments)` — normalizes and appends; no-op when nothing survives |
+| `ICompilationService` | `BuildAsync(rebuild)` → `CompilationDto?`, `GetData(id)` → stored MP4 bytes or null |
+| `IVideoProcessingService` | `ProbeDuration(path)`, `ExtractFrame(path, timecode)`, `GeneratePreview(path, resolution, slices)`, `GenerateCompilation(clips, width, height)` |
 | `IThumbnailService` | `GetIdentityAsync(videoId, timecode = null)` — version only, no generation, `GetThumbnailAsync(videoId, timecode = null)` — cached, null timecode means the stored one, `InvalidateCache(videoId)` — clears every timecode by key prefix, `ClearAllCache()` |
 | `IPreviewService` | `GetIdentityAsync(videoId, resolution)` — version only, no generation, `GetPreviewAsync(videoId, resolution)` — cached, `InvalidateCache(videoId)` — clears all resolutions, `ClearAllCache()` |
 | `ISmartGroupingService` | `GroupVideosAsync()` |
