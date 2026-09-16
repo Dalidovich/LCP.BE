@@ -207,9 +207,9 @@ class SiteSettings {
 | `SettingsDto` | mirrors `SiteSettings` | Site settings response |
 | `WatchRecordRequest` | `record(string VideoId, List<WatchSegmentRequest> Segments)` | `POST /api/most-watched` body |
 | `WatchSegmentRequest` | `record(double Start, double Duration)` | Raw segment in seconds, before normalization |
-| `CompilationDto` | `Id`, `Duration`, `Moments` (`CompilationMomentDto`: `VideoId`, `NameEn`, `Offset`, `Start`, `Duration`) | `POST /api/compilation` response; moments in playback order, `Offset` = position inside the compilation |
+| `CompilationDto` | `Id`, `Duration`, `Moments` (`CompilationMomentDto`: `VideoId`, `NameEn`, `Offset`, `Start`, `Duration`, `Speed`) | `POST /api/compilation` response; moments in playback order. `Start`/`Duration` are source seconds, `Speed` the playback rate baked in, so a moment occupies `Duration / Speed` seconds; `Offset` and `CompilationDto.Duration` are on that compilation timeline |
 | `MomentCluster` / `CompilationCandidate` / `SelectedMoment` | records | Derived stages of `CompilationPlanner` |
-| `CompilationClip` | `record(string VideoPath, double Start, double Duration)` | ffmpeg input for one compilation piece |
+| `CompilationClip` | `record(string VideoPath, double Start, double Duration, double Speed)` | ffmpeg input for one compilation piece |
 | `PreviewResolution` | enum `Preview144`, `Preview360` | Preview quality selector |
 | `PreviewResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Preview clip with etag support |
 | `ThumbnailResult` | `record(byte[] Data, DateTime LastModified, string Version)` | Thumbnail frame with etag support |
@@ -280,11 +280,12 @@ One MP4 spliced from the most watched moments. Spec: `docs/comp alg.md`. Works o
 
 **`CompilationService`** (singleton):
 - Eligible videos: library snapshot filtered by `SiteSettings.VideoTypeFilter` (only that filter) and existing files
-- Builds serialize on a `SemaphoreSlim`. Fingerprint = sorted `videoId:start:duration` of the plan; same fingerprint and `rebuild=false` → stored compilation returned without ffmpeg
+- Speed per video: `2.0` when `SiteSettings.AnimeSpeedUp` and `Type == Anime`, otherwise `1.0` — the same 2x rule the player applies. The planner stays speed-agnostic, so `MaxDurationSeconds` caps source seconds and a compilation with anime in it plays back shorter
+- Builds serialize on a `SemaphoreSlim`. Fingerprint = sorted `videoId:start:duration:speed` of the plan; same fingerprint and `rebuild=false` → stored compilation returned without ffmpeg. Toggling `AnimeSpeedUp` therefore forces a rebuild
 - Holds only the latest compilation (`byte[]` + `CompilationDto`); a new build replaces it, previous ids then `404`. Nothing is written to disk except ffmpeg temp files
 - `CompilationDto.Moments[].NameEn` = library `NameEn`, falling back to `SystemName`
 
-**`VideoProcessingService.GenerateCompilation`** — each clip encoded to a temp MP4 (2 in parallel, each under the global ffmpeg limiter, `FfmpegConvertTimeoutSeconds` each) with direct `ffmpeg` process calls: accurate `-ss`/`-t`, scale+pad to `Width`x`Height`, 30 fps, yuv420p, libx264 veryfast CRF 23, AAC 160k 48 kHz stereo; sources without an audio stream (detected from `ffmpeg -i` output) get `anullsrc` silence. Then concat demuxer `-c copy -movflags +faststart`. Temp dir always deleted
+**`VideoProcessingService.GenerateCompilation`** — each clip encoded to a temp MP4 (2 in parallel, each under the global ffmpeg limiter, `FfmpegConvertTimeoutSeconds` each) with direct `ffmpeg` process calls: accurate `-ss`/`-t`, scale+pad to `Width`x`Height`, 30 fps, yuv420p, libx264 veryfast CRF 23, AAC 160k 48 kHz stereo; sources without an audio stream (detected from `ffmpeg -i` output) get `anullsrc` silence of the played length. `Speed > 1` prepends `setpts=PTS/{speed}` to the video chain and `atempo={speed}` to the audio chain, so `-t` still cuts `Duration` source seconds and the clip lasts `Duration / Speed`. Then concat demuxer `-c copy -movflags +faststart`. Temp dir always deleted
 
 ## Upload Atomicity
 

@@ -14,4 +14,5 @@ public class CompilationMomentDto
     public double Offset { get; set; }
     public int Start { get; set; }
     public int Duration { get; set; }
+    public double Speed { get; set; } = 1.0;
 }

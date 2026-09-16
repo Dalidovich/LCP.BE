@@ -12,6 +12,8 @@ namespace LCP.BLL.Services;
 
 public class CompilationService : ICompilationService
 {
+    private const double AnimeSpeed = 2.0;
+
     private sealed record StoredCompilation(string Fingerprint, CompilationDto Info, byte[] Data);
 
     private readonly IVideoRepository _videoRepository;
@@ -44,17 +46,21 @@ public class CompilationService : ICompilationService
         await _buildLock.WaitAsync();
         try
         {
-            var videos = await EligibleVideosAsync();
+            var siteSettings = await _settingsRepository.GetAsync();
+            var videos = EligibleVideos(await _videoRepository.GetSnapshotAsync(), siteSettings);
             var records = await _watchRecordRepository.GetAllAsync();
             var durations = videos.ToDictionary(p => p.Key, p => p.Value.Duration, StringComparer.Ordinal);
 
             var plan = CompilationPlanner.Plan(records, durations, _settings.Compilation);
             if (plan.Count == 0) return null;
 
+            var animeSpeedUp = siteSettings?.AnimeSpeedUp ?? false;
+            var speeds = videos.ToDictionary(p => p.Key, p => SpeedOf(p.Value, animeSpeedUp), StringComparer.Ordinal);
+
             var fingerprint = string.Join(';', plan
                 .OrderBy(m => m.VideoId, StringComparer.Ordinal)
                 .ThenBy(m => m.Start)
-                .Select(m => $"{m.VideoId}:{m.Start}:{m.Duration}"));
+                .Select(m => $"{m.VideoId}:{m.Start}:{m.Duration}:{speeds[m.VideoId]}"));
 
             if (!rebuild && _current?.Fingerprint == fingerprint)
                 return _current.Info;
@@ -63,7 +69,7 @@ public class CompilationService : ICompilationService
             Random.Shared.Shuffle(ordered);
 
             var clips = ordered
-                .Select(m => new CompilationClip(ResolvePath(videos[m.VideoId]), m.Start, m.Duration))
+                .Select(m => new CompilationClip(ResolvePath(videos[m.VideoId]), m.Start, m.Duration, speeds[m.VideoId]))
                 .ToList();
 
             _logger.LogInformation("Building a compilation of {Count} moments ({Seconds}s)",
@@ -74,11 +80,12 @@ public class CompilationService : ICompilationService
             if (data is null)
                 throw new InvalidOperationException("Failed to generate the compilation");
 
+            var moments = ToMoments(ordered, videos, speeds);
             var info = new CompilationDto
             {
                 Id = Guid.NewGuid().ToString("N"),
-                Duration = ordered.Sum(m => m.Duration),
-                Moments = ToMoments(ordered, videos)
+                Duration = moments.Sum(m => m.Duration / m.Speed),
+                Moments = moments
             };
 
             _current = new StoredCompilation(fingerprint, info, data);
@@ -96,10 +103,15 @@ public class CompilationService : ICompilationService
         return current is not null && current.Info.Id == id ? current.Data : null;
     }
 
-    private async Task<Dictionary<string, VideoMetadata>> EligibleVideosAsync()
+    private static double SpeedOf(VideoMetadata video, bool animeSpeedUp)
     {
-        var snapshot = await _videoRepository.GetSnapshotAsync();
-        var siteSettings = await _settingsRepository.GetAsync();
+        return animeSpeedUp && video.Type == VideoType.Anime ? AnimeSpeed : 1.0;
+    }
+
+    private Dictionary<string, VideoMetadata> EligibleVideos(
+        IEnumerable<VideoMetadata> snapshot,
+        SiteSettings? siteSettings)
+    {
         var typeFilter = siteSettings?.VideoTypeFilter ?? [];
 
         return snapshot
@@ -115,7 +127,8 @@ public class CompilationService : ICompilationService
 
     private static List<CompilationMomentDto> ToMoments(
         IEnumerable<SelectedMoment> ordered,
-        IReadOnlyDictionary<string, VideoMetadata> videos)
+        IReadOnlyDictionary<string, VideoMetadata> videos,
+        IReadOnlyDictionary<string, double> speeds)
     {
         var moments = new List<CompilationMomentDto>();
         var offset = 0.0;
@@ -123,15 +136,17 @@ public class CompilationService : ICompilationService
         foreach (var moment in ordered)
         {
             var video = videos[moment.VideoId];
+            var speed = speeds[moment.VideoId];
             moments.Add(new CompilationMomentDto
             {
                 VideoId = moment.VideoId,
                 NameEn = string.IsNullOrEmpty(video.NameEn) ? video.SystemName : video.NameEn,
                 Offset = offset,
                 Start = moment.Start,
-                Duration = moment.Duration
+                Duration = moment.Duration,
+                Speed = speed
             });
-            offset += moment.Duration;
+            offset += moment.Duration / speed;
         }
 
         return moments;

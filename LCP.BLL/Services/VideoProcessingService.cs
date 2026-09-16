@@ -326,13 +326,17 @@ public class VideoProcessingService : IVideoProcessingService
         var hasAudio = Regex.IsMatch(probe, @"Stream #\d+:\d+.*?: Audio:");
         var start = MediaVersion.Format(clip.Start);
         var duration = MediaVersion.Format(clip.Duration);
-        var video = $"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p";
+        var speed = MediaVersion.Format(clip.Speed);
+        var playedDuration = MediaVersion.Format(clip.Duration / clip.Speed);
+        var retime = clip.Speed == 1.0 ? string.Empty : $"setpts=PTS/{speed},";
+        var tempo = clip.Speed == 1.0 || !hasAudio ? string.Empty : $"atempo={speed},";
+        var video = $"{retime}scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p";
 
         var arguments =
             $"-hide_banner -y -ss {start} -t {duration} -i \"{clip.VideoPath}\" " +
-            $"-f lavfi -t {duration} -i anullsrc=channel_layout=stereo:sample_rate=48000 " +
+            $"-f lavfi -t {playedDuration} -i anullsrc=channel_layout=stereo:sample_rate=48000 " +
             $"-map 0:v:0 -map {(hasAudio ? "0" : "1")}:a:0 " +
-            $"-vf \"{video}\" -af aresample=48000,aformat=channel_layouts=stereo " +
+            $"-vf \"{video}\" -af {tempo}aresample=48000,aformat=channel_layouts=stereo " +
             "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -ar 48000 -ac 2 -shortest " +
             $"\"{outputFile}\"";
 
