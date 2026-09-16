@@ -139,7 +139,16 @@ Builds the frontend, bundles it into the API and publishes a self-contained sing
 | `FfmpegConvertTimeoutSeconds` | Kill an ffmpeg conversion after this many seconds | `300` |
 | `MaxUploadBytes` | Rejection threshold for a single uploaded file | `68719476736` (64 GB) |
 | `MinWatchSegmentSeconds` | Shortest watched stretch written to `mostWatched.json` | `5` |
-| `CompilationMaxDurationSeconds` | Maximum compilation length; written to `LibrarySettings:Compilation:MaxDurationSeconds`, the other compilation knobs keep their defaults | `600` |
+| `CompilationMaxDurationSeconds` | Maximum compilation length | `600` |
+| `CompilationMergeGapSeconds` | Gap between watched stretches still merged into one cluster | `3` |
+| `CompilationMinMomentSeconds` | Shortest moment the planner may cut, in source seconds (a sped-up video plays it shorter) | `5` |
+| `CompilationMaxMomentSeconds` | Longest moment the planner may cut | `30` |
+| `CompilationMaxCandidatesPerCluster` | Candidate moments taken from one cluster | `3` |
+| `CompilationMinDistanceSeconds` | Gap kept between two moments picked from the same video | `5` |
+| `CompilationMaxCoveragePercent` | Share of a single video the compilation may cover | `0.25` |
+| `CompilationMaxCoverageSeconds` | Hard cap on seconds taken from a single video | `120` |
+| `CompilationVideoRepeatPenalty` | Score penalty per moment already taken from the same video | `0.5` |
+| `CompilationWidth` / `CompilationHeight` | Resolution of the rendered compilation | `1280` / `720` |
 | `CorsAllowedOrigins` | Extra browser origins allowed to call the API; unnecessary for the bundled SPA, which is same-origin | `@()` |
 | `Port` | HTTP port to listen on | `5107` |
 | `ListenAddress` | Bind address (`0.0.0.0` = all interfaces, `127.0.0.1` = local only) | `0.0.0.0` |

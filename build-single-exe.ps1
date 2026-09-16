@@ -13,6 +13,16 @@ param(
     [long]$MaxUploadBytes = 68719476736,
     [double]$MinWatchSegmentSeconds = 5,
     [double]$CompilationMaxDurationSeconds = 600,
+    [int]$CompilationMergeGapSeconds = 3,
+    [int]$CompilationMinMomentSeconds = 5,
+    [int]$CompilationMaxMomentSeconds = 30,
+    [int]$CompilationMaxCandidatesPerCluster = 3,
+    [int]$CompilationMinDistanceSeconds = 5,
+    [double]$CompilationMaxCoveragePercent = 0.25,
+    [double]$CompilationMaxCoverageSeconds = 120,
+    [double]$CompilationVideoRepeatPenalty = 0.5,
+    [int]$CompilationWidth = 1280,
+    [int]$CompilationHeight = 720,
     [string[]]$CorsAllowedOrigins = @(),
     [int]$Port = 5107,
     [string]$ListenAddress = '0.0.0.0',
@@ -152,7 +162,17 @@ $settings = [ordered]@{
         MaxUploadBytes              = $MaxUploadBytes
         MinWatchSegmentSeconds      = $MinWatchSegmentSeconds
         Compilation                 = [ordered]@{
-            MaxDurationSeconds = $CompilationMaxDurationSeconds
+            MaxDurationSeconds      = $CompilationMaxDurationSeconds
+            MergeGapSeconds         = $CompilationMergeGapSeconds
+            MinMomentSeconds        = $CompilationMinMomentSeconds
+            MaxMomentSeconds        = $CompilationMaxMomentSeconds
+            MaxCandidatesPerCluster = $CompilationMaxCandidatesPerCluster
+            MinDistanceSeconds      = $CompilationMinDistanceSeconds
+            MaxCoveragePercent      = $CompilationMaxCoveragePercent
+            MaxCoverageSeconds      = $CompilationMaxCoverageSeconds
+            VideoRepeatPenalty      = $CompilationVideoRepeatPenalty
+            Width                   = $CompilationWidth
+            Height                  = $CompilationHeight
         }
     }
 }
