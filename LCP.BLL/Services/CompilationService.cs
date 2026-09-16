@@ -1,4 +1,4 @@
-using LCP.BLL.DTOs;
+﻿using LCP.BLL.DTOs;
 using LCP.BLL.Helpers;
 using LCP.BLL.Interfaces;
 using LCP.DAL.Configuration;
@@ -65,8 +65,14 @@ public class CompilationService : ICompilationService
             if (!rebuild && _current?.Fingerprint == fingerprint)
                 return _current.Info;
 
-            var ordered = plan.ToArray();
-            Random.Shared.Shuffle(ordered);
+            var groups = plan
+                .GroupBy(m => m.VideoId, StringComparer.Ordinal)
+                .ToArray();
+            Random.Shared.Shuffle(groups);
+
+            var ordered = groups
+                .SelectMany(g => g.OrderBy(m => m.Start))
+                .ToArray();
 
             var clips = ordered
                 .Select(m => new CompilationClip(ResolvePath(videos[m.VideoId]), m.Start, m.Duration, speeds[m.VideoId]))
